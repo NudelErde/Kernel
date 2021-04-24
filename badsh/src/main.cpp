@@ -129,7 +129,7 @@ int main() {
                 uint64_t exeINode = getINodeOfPath(systemDevice, buffer + 2);
                 if(exeINode != 0) {
                     if(getFlagsOfINode(systemDevice, exeINode) & 0x8000) {
-                        uint64_t pid = createProcess(systemDevice, buffer + 2, "\0\0");
+                        uint64_t pid = createProcess(systemDevice, buffer + 2, buffer + 2);
                         uint64_t returnValue = waitForProcess(pid);
                     }
                 }
