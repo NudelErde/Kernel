@@ -138,15 +138,15 @@ namespace Kernel{
                     ++(proc->threads);
                     currentThread->enterIPM = false;
                 }
-                if(currentThread->exitIPM) {
-                    --(proc->threads);
-                    currentThread->exitIPM = false;
-                }
                 Process* procPtr = new(staticProcessBuffer)Process((Process&&)*proc);
                 procPtr->reload();
                 currentThread->reload();
                 currentThread->toProcess();
                 new(proc)Process((Process&&)*procPtr);
+                if(currentThread->exitIPM) {
+                    --(proc->threads);
+                    currentThread->exitIPM = false;
+                }
             } else {
                 removed = true; // thread has no process -> remove;
             }
@@ -163,7 +163,7 @@ namespace Kernel{
                 auto iter = threadList->getIterator();
                 do {
                     auto obj = iter.get();
-                    
+
                     if(obj->waitingForPID == thePid) {
                         obj->waitingForPID = 0;
                         obj->waitingForExitValue = val;
