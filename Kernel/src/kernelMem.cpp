@@ -3,6 +3,7 @@
 #include "interrupt.hpp"
 #include "print.hpp"
 #include "KernelOut.hpp"
+#include "debug.hpp"
 
 namespace Kernel {
     
@@ -17,15 +18,9 @@ void onPageFault(const Interrupt& i) {
     : "=a"(mem)
     :
     :);
-    kout
-        << "Page fault.\n"
-        << "Access to " << Hex(mem) << '\n'
-        << "Error code 0b" << Bin(i.errorCode) << '\n'
-        << setDisplay()
-        << "Page fault.\n"
-        << "Access to " << Hex(mem) << '\n'
-        << "Error code 0b" << Bin(i.errorCode) << '\n'
-        ;
+    kout << "Page fault at 0x" << Hex(mem) << '\n';
+    printDebugInfo(i.stackFrame);
+
     asm("hlt");
 }
 

@@ -19,6 +19,8 @@
 #include "elf.hpp"
 #include "APIC.hpp"
 #include "Scheduler.hpp"
+#include "tss.hpp"
+#include "debug.hpp"
 
 //docker run --rm -v "${pwd}:/root/env" myos-buildenv make build-x86_64; qemu-system-x86_64 -cdrom dist/kernel.iso -drive file=image_file,format=raw -L "C:\Program Files\qemu" -m 6G --serial stdio -boot d
 
@@ -26,6 +28,8 @@ using namespace Kernel;
 
 extern uint8_t kernel_start;
 extern uint8_t kernel_end;
+
+extern uint8_t gdt64[] asm("gdt64");
 
 void kern_start() {
     crc32c_init();
@@ -40,6 +44,8 @@ void kern_start() {
     initExceptionHandlers();
     initSleep();
     PhysicalMemoryManagment::init();
+
+    setupTss((uint64_t)gdt64, 2);
     initKernelDynamicMemory();
     readACPITables();
     
@@ -67,6 +73,6 @@ void kern_start() {
 
     EXT4 ext(*hardDisk, 0);
     const char* args = "/startup.elf\0osboot\0";
-    loadAndExecute(ext, args, args); /*filename is first arg*/
+    loadAndExecute(ext, args, args, 0); /*filename is first arg*/
     Scheduler::run();
 }

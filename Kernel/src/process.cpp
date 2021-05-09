@@ -10,103 +10,163 @@
 namespace Kernel {
 
     extern void __systemHandler() asm("__systemHandler");
-    extern uint8_t __syscallData[] asm("__syscallData");
 
     static Thread* current;
     static Process* lastProcess;
 
-    void onProcessSystemCall(uint64_t args[4]) {
-        switch(args[1]) { // select process command
-            case 1: // return and remove from scheduler
-                lastProcess->exit(args[2]);
+    void onProcessSystemCall(uint64_t b, uint64_t c, uint64_t d) {
+        switch(b) { // select process command
+            case 0x01: // return and remove from scheduler
+                lastProcess->exit(c);
                 Scheduler::removeCurrentThread();
                 Thread::toKernel();
                 return;
-            case 2:
-                *((uint64_t*)args[2]) = lastProcess->getPID();
+            case 0x02:
+                *((uint64_t*)c) = lastProcess->getPID();
                 return;
-            case 3: {
+            case 0x03: {
                     struct SpawnRequest{
                         uint64_t deviceID;
                         const char* path;
                         const char* argumentsArray;
                         uint64_t pid;
                     };
-                    SpawnRequest* req = (SpawnRequest*)args[2];
+                    SpawnRequest* req = (SpawnRequest*)c;
                     const char* processPath = req->path;
                     ATA::Device* device = ATA::getDevice(req->deviceID);
                     EXT4 ext(*device, 0);
-                    uint64_t pid = loadAndExecute(ext, processPath, req->argumentsArray);
+                    uint64_t pid = loadAndExecute(ext, processPath, req->argumentsArray, lastProcess->getPID());
                     lastProcess->reload();
                     current->reload();
                     req->pid = pid;
                 }
                 return;
-            case 4: 
-                current->setWaiting(args[2]); // wait for args micro seconds
+            case 0x04: 
+                current->setWaiting(c); // wait for args micro seconds
                 Thread::toKernel();
                 return;
-            case 5:
-                *((uint64_t*)args[3]) = (uint64_t)(new uint8_t[args[2]]);
+            case 0x05:
+                *((uint64_t*)d) = (uint64_t)(new uint8_t[c]);
                 return;
-            case 6:
-                delete (uint8_t*)args[2];
+            case 0x06:
+                delete (uint8_t*)c;
                 return;
-            case 7: // create shared memory page
-                *((uint64_t*)args[2]) = lastProcess->createSharedMemoryPage();
+            case 0x07: // create shared memory page
+                *((uint64_t*)c) = lastProcess->createSharedMemoryPage();
                 return;
-            case 8: // invite process to memory page
-                lastProcess->addProcessToSharedMemoryPage(args[2], args[3]);
+            case 0x08: // invite process to memory page
+                lastProcess->addProcessToSharedMemoryPage(c, d);
                 return;
-            case 9: // get pointer to shared memory page by id
-                *((uint64_t*)args[3]) = lastProcess->getPointerToSharedPage(args[2]);
+            case 0x09: // get pointer to shared memory page by id
+                *((uint64_t*)d) = lastProcess->getPointerToSharedPage(c);
                 return;
-            case 10: // free shared memory page
-                lastProcess->unuseSharedMemoryPage(args[2]);
+            case 0x0A: // free shared memory page
+                lastProcess->unuseSharedMemoryPage(c);
                 return;
-            case 11: // get method id in other proccess
-                return;
-            case 12: // call process method by id an pid
-                return;
-            case 13: // register inter process method
-                return;
-            case 14: // remove inter process method
-                return;
-            case 15:
-                current->waitForPID(args[2]);
+            case 0x0B:
+                current->waitForPID(c);
                 Thread::toKernel();
-                *((uint64_t*)args[3]) = current->waitForPIDResult();
+                *((uint64_t*)d) = current->waitForPIDResult();
                 return;
-            case 16:
-                *((uint64_t*)args[2]) = (uint64_t) lastProcess->getArgumentPointer();
+            case 0x0C:
+                *((uint64_t*)c) = (uint64_t) lastProcess->getArgumentPointer();
                 return;
+            case 0x0D:
+                *(uint64_t*)c = lastProcess->getParentPID();
+                return;
+            case 0x10: { // get method id in other proccess
+                    struct InterProcessMethodInformationRequest{
+                        uint64_t pid;
+                        uint8_t ipmid;
+                        uint8_t argCount;
+                        bool threadCreating;
+                    };
+                    InterProcessMethodInformationRequest* request = (InterProcessMethodInformationRequest*)c;
+                    Process* proc = Scheduler::getProcessById(request->pid);
+                    if(!proc) // not a process
+                        return;
+                    if(request->ipmid >= Process::maxInterProcessMethods) // out of bounds
+                        return;
+                    InterProcessMethod* ipm = &proc->getInterPorcessMethods()[request->ipmid];
+                    if(!ipm->address) // invalid ipmid
+                        return;
+
+                    request->argCount = ipm->argCount;
+                    request->threadCreating = ipm->createThread;
+                }
+                return;
+            case 0x11: { // call process method by id and pid
+                    struct InterProcessMethodCallTargetDescriptor{
+                        uint64_t pid;
+                        uint64_t* argPointer; // must be on stack
+                        uint8_t ipmid;
+                        uint64_t result;
+                    };
+                    InterProcessMethodCallTargetDescriptor* request = (InterProcessMethodCallTargetDescriptor*)c;
+                    Process* proc = Scheduler::getProcessById(request->pid);
+                    if(!proc) // not a process
+                        return;
+                    if(request->ipmid >= Process::maxInterProcessMethods) // out of bounds
+                        return;
+                    InterProcessMethod* ipm = &proc->getInterPorcessMethods()[request->ipmid];
+                    if(ipm->address == 0) // invalid ipmid
+                        return;
+                    if(ipm->createThread) // thread creation not supported yet
+                        return;
+                    request->result = ipm->switchTo(request->argPointer, request->pid);
+                }
+                return;
+            case 0x12: { // register inter process method
+                    struct InterProcessMethodRegistration{
+                        uint8_t ipmid;
+                        uint8_t argCount;
+                        uint64_t functionPointer;
+                        bool createThread;
+                    };
+                    InterProcessMethodRegistration* request = (InterProcessMethodRegistration*)c;
+                    if(request->ipmid >= Process::maxInterProcessMethods) // out of bounds
+                        return;
+                    InterProcessMethod* ipm = &lastProcess->getInterPorcessMethods()[request->ipmid];
+                    if(ipm->address) // already used
+                        return;
+                    ipm->address = request->functionPointer;
+                    ipm->argCount = request->argCount;
+                    ipm->createThread = request->createThread;
+                }
+                return;
+            case 0x13: // remove inter process method
+                if(c >= Process::maxInterProcessMethods) // out of bounds
+                        return;
+                lastProcess->getInterPorcessMethods()[c].address = 0;
+                return;
+
             default:
                 return;
         }
     }
 
-    void onATASystemCall(uint64_t args[4]) {
-        switch (args[1]) {
+    void onATASystemCall(uint64_t b, uint64_t c, uint64_t d) {
+        switch (b) {
         case 1:
-            *((uint64_t*)args[2]) = ATA::getDeviceCount();
+            *((uint64_t*)c) = ATA::getDeviceCount();
             return;
         case 2:
-            *((uint64_t*)args[2]) = ATA::getSystemDevice();
+            *((uint64_t*)c) = ATA::getSystemDevice();
             return;
         default:
             return;
         }
     }
 
-    void onBasicIOCall(uint64_t args[4]) {
-        switch (args[1]) {
+    void onBasicIOCall(uint64_t b, uint64_t c, uint64_t d) {
+        switch (b) {
         case 1: {
             Serial serial(0x3F8);
             while(!serial.outputBufferEmpty()) { // todo resource and interrupt stuff
                 current->setWaiting(100);
                 Thread::toKernel();
             }
-            serial.write(args[2]);
+            serial.write(c);
         }
             return;
         case 2: {
@@ -115,7 +175,7 @@ namespace Kernel {
                 current->setWaiting(100);
                 Thread::toKernel();
             }
-            *((uint8_t*)args[2]) = serial.read();
+            *((uint8_t*)c) = serial.read();
         }
             return;
         default:
@@ -123,16 +183,16 @@ namespace Kernel {
         }
     }
 
-    void onEXT4Syscall(uint64_t args[4]) {
-        ATA::Device* device = ATA::getDevice(args[2]);
+    void onEXT4Syscall(uint64_t b, uint64_t c, uint64_t d) {
+        ATA::Device* device = ATA::getDevice(c);
         EXT4 ext(*device, 0);
-        switch (args[1]) {
+        switch (b) {
         case 1: {
             struct InodeOfPathRequest{
                 const char* path;
                 uint64_t inode;
             };
-            InodeOfPathRequest* req = (InodeOfPathRequest*)args[3];
+            InodeOfPathRequest* req = (InodeOfPathRequest*)d;
             req->inode = ext.findFileINode(req->path);
         }
             return;
@@ -143,7 +203,7 @@ namespace Kernel {
                 uint8_t* buffer;
                 bool success;
             };
-            SectorOfInodeRequest* req = (SectorOfInodeRequest*)args[3];
+            SectorOfInodeRequest* req = (SectorOfInodeRequest*)d;
             auto inodeObj = ext.getINode(req->inode);
             req->success = ext.getSectorInFile(inodeObj, req->buffer, req->sector);
         }
@@ -153,7 +213,7 @@ namespace Kernel {
                 uint64_t inode;
                 uint64_t flags;
             };
-            FlagsOfInodeRequest* req = (FlagsOfInodeRequest*)args[3];
+            FlagsOfInodeRequest* req = (FlagsOfInodeRequest*)d;
             auto inodeObj = ext.getINode(req->inode);
             req->flags = inodeObj.i_mode;
         }
@@ -172,7 +232,7 @@ namespace Kernel {
                 DirectoryEntry* entries;
                 uint64_t count;
             };
-            DirectoryEntriesRequest* req = (DirectoryEntriesRequest*)args[3];
+            DirectoryEntriesRequest* req = (DirectoryEntriesRequest*)d;
             req->count = 0;
             auto inodeObj = ext.getINode(req->inode);
             if(ext.getFileType(inodeObj) != EXT4::FileType::DIRECTORY)
@@ -197,21 +257,19 @@ namespace Kernel {
         }
     }
 
-    extern "C" __attribute__((interrupt)) 
-    void onSystemCall(void* stackFrame) {
-        uint64_t* data = (uint64_t*)__syscallData; // size = 4
-        switch(data[0]) {
+    extern "C" void onSystemCall(uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
+        switch(a) {
             case 1:
-                onProcessSystemCall(data);
+                onProcessSystemCall(b, c, d);
                 break;
             case 2:
-                onATASystemCall(data);
+                onATASystemCall(b, c, d);
                 break;
             case 3:
-                onBasicIOCall(data);
+                onBasicIOCall(b, c, d);
                 break;
             case 4:
-                onEXT4Syscall(data);
+                onEXT4Syscall(b, c, d);
                 break;
             default:
                 break;
@@ -220,11 +278,12 @@ namespace Kernel {
 
     static uint64_t nextPID{};
 
-    Process::Process(MemoryPage *programPages, uint64_t count, MemoryManager &&heap, uint64_t sharedPagesLocation) : programPages(programPages), heap((MemoryManager &&) heap) {
+    Process::Process(MemoryPage *programPages, uint64_t count, MemoryManager &&heap, uint64_t sharedPagesLocation, uint64_t parentPid) : programPages(programPages), heap((MemoryManager &&) heap) {
         Process::sharedPagesLocation = sharedPagesLocation;
         valid = true;
         Process::count = count;
         pid = ++nextPID;
+        Process::parentPid = parentPid;
         for(auto& s : sharedPages) {
             s.sharedPageId = 0;
         }
@@ -238,6 +297,7 @@ namespace Kernel {
         count = other.count;
         pid = other.pid;
         threads = other.threads;
+        parentPid = other.parentPid;
         argumentPointer = other.argumentPointer;
         sharedPagesLocation = other.sharedPagesLocation;
         for(uint64_t i = 0; i < maxSharedPages; ++i) {
@@ -247,6 +307,7 @@ namespace Kernel {
                 other.sharedPages[i].sharedPageId = 0;
             }
         }
+        memcpy(&interProcessMethods, &other.interProcessMethods, sizeof(interProcessMethods));
 
         other.valid = false;
     }
@@ -263,6 +324,7 @@ namespace Kernel {
         count = other.count;
         pid = other.pid;
         threads = other.threads;
+        parentPid = other.parentPid;
         argumentPointer = other.argumentPointer;
         sharedPagesLocation = other.sharedPagesLocation;
         for(uint64_t i = 0; i < maxSharedPages; ++i) {
@@ -272,6 +334,7 @@ namespace Kernel {
                 other.sharedPages[i].sharedPageId = 0;
             }
         }
+        memcpy(&interProcessMethods, &other.interProcessMethods, sizeof(interProcessMethods));
 
         other.valid = false;
 
@@ -293,7 +356,7 @@ namespace Kernel {
     }
 
     void Process::init() {
-        Interrupt::setInterrupt(0x80, __systemHandler);
+        Interrupt::setInterrupt(0x80, __systemHandler, 0);
     }
 
     Process* Process::getLastLoadedProcess() {
@@ -339,6 +402,12 @@ namespace Kernel {
     }
 
     uint64_t Process::getPointerToSharedPage(uint64_t sharedMemoryId) {
+        for(uint64_t i = 0; i < maxSharedPages; ++i) {
+            if(sharedPages[i].sharedPageId == sharedMemoryId) {
+                return sharedPagesLocation + (i * pageSize);
+            }
+        }
+        useSharedMemoryPage(sharedMemoryId);
         for(uint64_t i = 0; i < maxSharedPages; ++i) {
             if(sharedPages[i].sharedPageId == sharedMemoryId) {
                 return sharedPagesLocation + (i * pageSize);
@@ -455,5 +524,8 @@ namespace Kernel {
         "g"(&tmpPointer->stackAddress)
         : "rax", "rdx");
     }
+
+    extern "C" __attribute__((interrupt)) 
+    void onSystemCallExit(void* stackframe) {}
 
 }

@@ -4,22 +4,23 @@ ENTRY(__start)
 SECTIONS {
     . = 1536M;
     
-    .text : 
+    
+    .text : ALIGN(0x1000)
     {
         *(.text)
     }
     
-    .data : 
+    .data : ALIGN(0x1000)
     {
         *(.data)
     }
     
-    .bss : 
+    .bss : ALIGN(0x1000)
     {
         *(.bss)
     }
     
-    .rodata : 
+    .rodata : ALIGN(0x1000)
     {
         *(.rodata)
     }

@@ -1,18 +1,22 @@
 global __process_toProcess
 global __process_toKernel
 global __systemHandler
-global __syscallData
 extern onSystemCall
+extern onSystemCallExit
 
-section .text:
+section .text
 bits 64
 __systemHandler:
-    mov qword[__syscallData], rax
-    mov qword[__syscallData + 8], rbx
-    mov qword[__syscallData + 16], rcx
-    mov qword[__syscallData + 24], rdx
+    push rbp
+    mov  rbp, rsp
+    add  rsp, -16
+    mov  rdi, rax
+    mov  rsi, rbx
+    xchg rdx, rcx
+    call onSystemCall
+    leave
 
-    jmp onSystemCall ; the c interrupt handler function will return from interrupt
+    jmp onSystemCallExit ; the c interrupt handler function will return from interrupt
 
 __process_toProcess:
     push rax ; save registers
@@ -98,8 +102,6 @@ __process_toKernel:
     pop rax
     ret
 
-section .bss:
+section .bss
 __kernel_stack_pointer:
     resb 8
-__syscallData:
-    resb 32

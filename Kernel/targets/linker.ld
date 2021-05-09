@@ -9,11 +9,12 @@ SECTIONS
 	{
 		KEEP(*(.multiboot_header))
 	}
-
+	boot_end = .;
 	.text :
 	{
 		*(.text)
 	}
+	code_end = .;
 
 	.bss :
 	{
@@ -24,5 +25,11 @@ SECTIONS
 	{
 		*(.rodata)
 	}
+
+	.data : 
+	{
+		*(.data)
+	}
+
 	kernel_end = .;
 }

@@ -126,7 +126,7 @@ void LocalAPIC::interruptIn(uint64_t microseconds, void(*callback)()) {
         if(localCallback)
             localCallback();
         LocalAPIC::endInterrupt();
-    }); // Interrupt handler = ignore
+    }, 0); // Interrupt handler = ignore
 
     *(uint32_t volatile*)(localAPICAddress + 0x3E0) = 0x3; // divider = 16
     

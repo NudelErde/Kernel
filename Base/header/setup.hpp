@@ -13,6 +13,41 @@ void* getPointerToSharedPage(uint64_t pageID);
 void freeSharedMemoryPage(uint64_t pageID);
 uint64_t waitForProcess(uint64_t pid);
 const char* getArguments();
+uint64_t getParentPid();
+
+struct InterProcessMethodInfo{
+  uint8_t argCount;
+  bool createThread;
+};
+InterProcessMethodInfo getInterProcessMethodInfo(uint64_t pid, uint8_t ipmid);
+uint64_t callInterProcessMethod(uint64_t pid, uint8_t ipmid, uint64_t* argPointer);
+void registerInterProcessMethod(uint8_t ipmid, uint8_t argCount, uint64_t functionPointer, bool thread);
+void removeInterProcessMethod(uint8_t ipmid);
+
+template<typename ArgT>
+constexpr uint64_t convertTo64Bit(ArgT val) {
+  static_assert(sizeof(ArgT) <= sizeof(uint64_t));
+  uint64_t result = *reinterpret_cast<uint64_t*>(&val);
+  if constexpr(sizeof(ArgT) == sizeof(uint64_t)) {
+    return result;
+  } else {
+    return result & (0x1ull << (sizeof(ArgT) * 8u)) - 1u;
+  }
+}
+
+template<typename ...ArgT>
+uint64_t callIPM(uint64_t pid, uint64_t ipmid, ArgT... argV) {
+  if constexpr (sizeof...(argV) == 0) {
+    uint64_t args[1]{};
+    return callInterProcessMethod(pid, ipmid, args);
+  } else {
+    uint64_t args[sizeof...(argV)]{};
+    uint64_t i = 0;
+    ((args[i++] = convertTo64Bit(argV)) , ...);
+
+    return callInterProcessMethod(pid, ipmid, args);
+  }
+}
 
 uint64_t getDeviceCount();
 uint64_t getSystemDevice();

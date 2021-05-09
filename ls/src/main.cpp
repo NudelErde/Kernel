@@ -26,14 +26,11 @@ static void printBase(uint64_t number, uint64_t base, int size) {
     }
 }
 
-int main() {
+int main(int argc, const char* argv[]) {
     uint64_t systemDevice = getSystemDevice();
     const char* requestedPath = "/";
-    const char* args = getArguments();
-    for(; *args; ++args);
-    ++args;
-    if(*args) {
-        requestedPath = args;
+    if(argc > 1) {
+        requestedPath = argv[1];
     }
     uint64_t inode = getINodeOfPath(systemDevice, requestedPath);
     if(!inode || getFlagsOfINode(systemDevice, inode) & 0x4000 == 0) {

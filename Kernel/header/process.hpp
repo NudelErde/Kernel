@@ -5,6 +5,7 @@
 #include "kernelMem.hpp"
 #include "KernelOut.hpp"
 #include "Scheduler.hpp"
+#include "InterProcessMethod.hpp"
 
 namespace Kernel {
 
@@ -19,8 +20,11 @@ class Thread{
     uint64_t waitingForPID{};
     uint64_t waitingForExitValue{};
     bool markedProcess{};
+    bool enterIPM{};
+    bool exitIPM{};
 
     friend class Scheduler;
+    friend class InterProcessMethod;
 public:
     Thread(MemoryPage stack[stackPageCount], uint64_t currentCodeAddress, uint64_t pid);
     Thread(Thread&& other) noexcept = default;
@@ -35,6 +39,10 @@ public:
     inline uint64_t getStackAddress() {return stackAddress;}
     inline uint64_t getEarliestSchedule() {return earliestSchedule;}
     inline uint64_t getPID() {return pid;}
+    inline uint64_t getStackBaseAddress() {return stack[0].getVirtualAddress();}
+
+    inline void setEnterIPM() { enterIPM = true; }
+    inline void setExitIPM() { exitIPM = true; }
 
     inline void waitForPID(uint64_t pid) { waitingForPID = pid; }
     inline uint64_t waitForPIDResult() { return waitingForExitValue; }
@@ -50,6 +58,7 @@ public:
 class Process{
 public:
     static constexpr uint64_t maxSharedPages = 8;
+    static constexpr uint64_t maxInterProcessMethods = 16;
 private:
     MemoryPage* programPages;
     MemoryManager heap;
@@ -62,9 +71,12 @@ private:
             ~PageBuffer(){}
         } pageBuffer;
     } sharedPages[maxSharedPages];
+    InterProcessMethod interProcessMethods[maxInterProcessMethods]{}; // todo dynamic allocated
+    
     uint64_t finalReturnValue{};
     uint64_t count;
     uint64_t pid;
+    uint64_t parentPid;
     uint64_t threads{};
     uint64_t sharedPagesLocation;
     const char* argumentPointer;
@@ -73,7 +85,7 @@ private:
 
     friend class Scheduler;
 public:
-    Process(MemoryPage* programPages, uint64_t count, MemoryManager&& heap, uint64_t sharedPagesLocation);
+    Process(MemoryPage* programPages, uint64_t count, MemoryManager&& heap, uint64_t sharedPagesLocation, uint64_t parentPid);
     Process(Process&& other) noexcept;
     Process& operator=(Process&& other) noexcept;
     Process(const Process&) = delete;
@@ -91,7 +103,9 @@ public:
     inline const char* getArgumentPointer() { return argumentPointer; }
     inline void setArgumentPointer(const char* str) { argumentPointer = str; }
     inline uint64_t getPID() {return pid;}
+    inline uint64_t getParentPID() {return parentPid;}
     inline uint64_t getThreadCount() {return threads;}
+    inline InterProcessMethod* getInterPorcessMethods() {return interProcessMethods;}
 
     static void init();
     static Process* getLastLoadedProcess();

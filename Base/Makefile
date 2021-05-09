@@ -10,11 +10,11 @@ object_files := $(cpp_object_files) $(program_object_files)
 
 $(program_object_files): $(program_dir)/build/cpp_object_files/%.o : $(program_dir)/src/%.cpp
 	mkdir -p $(dir $@) && \
-	x86_64-elf-g++ -c -I header -Wno-literal-suffix -fno-exceptions -mgeneral-regs-only -mno-red-zone -mgeneral-regs-only -ffreestanding $(patsubst $(program_dir)/build/cpp_object_files/%.o, $(program_dir)/src/%.cpp, $@) -o $@
+	x86_64-elf-g++ -c -I header -Wno-literal-suffix -std=c++17 -fno-exceptions -mgeneral-regs-only -mno-red-zone -mgeneral-regs-only -ffreestanding $(patsubst $(program_dir)/build/cpp_object_files/%.o, $(program_dir)/src/%.cpp, $@) -o $@
 
 $(cpp_object_files): build/cpp_object_files/%.o : src/%.cpp
 	mkdir -p $(dir $@) && \
-	x86_64-elf-g++ -c -I header -Wno-literal-suffix -fno-exceptions -mgeneral-regs-only -mno-red-zone -mgeneral-regs-only -ffreestanding $(patsubst build/cpp_object_files/%.o, src/%.cpp, $@) -o $@
+	x86_64-elf-g++ -c -I header -Wno-literal-suffix -std=c++17 -fno-exceptions -mgeneral-regs-only -mno-red-zone -mgeneral-regs-only -ffreestanding $(patsubst build/cpp_object_files/%.o, src/%.cpp, $@) -o $@
 
 .PHONY: build
 build: $(object_files)

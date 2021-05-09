@@ -1,4 +1,5 @@
 #include "interrupt.hpp"
+#include "tss.hpp"
 #include "stdint.h"
 #include "stddef.h"
 #include "inout.hpp"
@@ -8,8 +9,7 @@ extern uint8_t asmInterruptTable[] asm("asmInterruptTable");
 
 namespace Kernel {
 
-static void PIC_remap(int offset1, int offset2)
-{
+static void PIC_remap(int offset1, int offset2) {
     constexpr uint32_t PIC1 = 0x20;
     constexpr uint32_t PIC2 = 0xA0;
     constexpr uint32_t PIC1_COMMAND = PIC1;
@@ -56,49 +56,65 @@ static void PIC_remap(int offset1, int offset2)
 
 static void(*interrupts[256])();
 
-static void build_interrupt(uint8_t gate[16], uint64_t address) {
+static void build_interrupt(uint8_t* _gate, uint64_t address, uint8_t ist) {
+    constexpr uint8_t interruptGateType = 0b1110;
+    InterruptGate* gate = (InterruptGate*)_gate;
+
+    gate->zero0 = 0;
+    gate->zero1 = 0;
+    gate->reserved = 0;
+
     if(address == 0) {
-        gate[5] |= 0b00001110; // set type to interrupt gate
-        gate[5] |= 0b00000000; // set to not present
-        gate[5] |= 0b00000000; // set ring level 0 / kernel level access
-        
-        gate[ 2] = 0x08; // dont know dont ask pls
+        gate->present = false;
+        gate->type = interruptGateType;
+        gate->descriptorPrivilegeLevel = 0;
+        gate->segmentSelector.inLocalTable= false;
+        gate->segmentSelector.requestedPrivilegeLevel = 0;
+        gate->segmentSelector.index = 1;
+        gate->interruptStack = 0;
         return;
     }
-    gate[5] |= 0b00001110; // set type to interrupt gate
-    gate[5] |= 0b10000000; // set present
-    gate[5] |= 0b00000000; // set ring level 0 / kernel level access
-    
-    gate[ 2] = 0x08; // dont know dont ask pls
-
-    gate[ 0] = address & 0xFF;
-    gate[ 1] = (address >>  8) & 0xFF;
-    gate[ 6] = (address >> 16) & 0xFF;
-    gate[ 7] = (address >> 24) & 0xFF;
-    gate[ 8] = (address >> 32) & 0xFF;
-    gate[ 9] = (address >> 40) & 0xFF;
-    gate[10] = (address >> 48) & 0xFF;
-    gate[11] = (address >> 56) & 0xFF;
+    gate->type = interruptGateType;
+    gate->present = true;
+    gate->descriptorPrivilegeLevel = 3; // callable from usercode
+    gate->segmentSelector.requestedPrivilegeLevel = 0;
+    gate->segmentSelector.inLocalTable = false;
+    gate->segmentSelector.index = 1;
+    gate->interruptStack = ist;
+    gate->lowAddress = (uint16_t)address;
+    gate->middleAddress = (uint16_t)(address >> 16);
+    gate->highAddress = (uint32_t)(address >> 32);
 }
 
 static void build_interrupt_table(uint8_t table[16 * 256], void* interruptHandler[256]) {
     for(size_t i = 0; i < 256; ++i) {
         if(interruptHandler[i] != nullptr) {
-            build_interrupt(table + (16 * i), (uint64_t)interruptHandler[i]);
+            build_interrupt(table + (16 * i), (uint64_t)interruptHandler[i], 0);
         }
     }
 }
 
 static void noDefaultInterruptHandlerFound(const Interrupt& inter){
+    const char* names[] {
+        "Divide", "Debug", "NMI", "Breakpoint", "Overflow", "BOUND", "Invalid Opcode", "No Math Coprocessor", "Double Fault", "",
+        "Invalid TSS", "Segment Not Present", "Stack-Segment Fault", "General Protection", "Page Fault"
+    };
+    constexpr uint64_t namesCount = sizeof(names) / sizeof(*names);
+
     using namespace Kernel;
-    Print::println("No default interrupt handler");
-    Print::print("Interrupt id: ");
-    Print::println((int)inter.interruptNumber);
+    kout << "No default interrupt handler\n";
+    kout << "Interrupt id: " << (uint64_t)inter.interruptNumber << ' ';
+    if(inter.interruptNumber < namesCount) {
+        kout << names[inter.interruptNumber];
+    }
+    kout << '\n';
+    if(inter.hasErrorCode) {
+        kout << "Error code: " << inter.errorCode;
+        kout << "\t0x" << Hex(inter.errorCode, 8);
+        kout << "\t0b" << Bin(inter.errorCode, 32) << '\n';
+    }
     if(inter.isHardwareInterrupt) {
-        if(inter.interruptNumber > 248) {
-            outb(0xA0, 0x20);
-        }
-        outb(0x20, 0x20);
+        Interrupt::sendHardwareEOI(inter.interruptNumber);
     }
     asm("hlt");
 }
@@ -106,8 +122,20 @@ static void noDefaultInterruptHandlerFound(const Interrupt& inter){
 static Interrupt::Handler interruptHandler[256] = {};
 static Interrupt::Handler defaultInterruptHandler = noDefaultInterruptHandlerFound;
 
-void Interrupt::setHandler(uint8_t interruptNumber, Interrupt::Handler handler) {
+void Interrupt::updateIST() {
+    InterruptGate* interruptTable = (InterruptGate*)asmInterruptTable;
+    for(uint16_t i = 0; i < 32; ++i) {
+        if(interruptTable[i].present) {
+            interruptTable[i].interruptStack = 1;
+        }
+    }
+    interruptTable[8].interruptStack = 2;
+}
+
+void Interrupt::setHandler(uint8_t interruptNumber, Interrupt::Handler handler, uint8_t ist) {
     interruptHandler[interruptNumber] = handler;
+    InterruptGate* interruptTable = (InterruptGate*)asmInterruptTable;
+    interruptTable[interruptNumber].interruptStack = ist;
 }
 Interrupt::Handler Interrupt::getHandler(uint8_t interruptNumber) {
     return interruptHandler[interruptNumber];
@@ -120,8 +148,8 @@ Interrupt::Handler Interrupt::getDefaultHandler() {
     return defaultInterruptHandler;
 }
 
-void Interrupt::setInterrupt(uint8_t interruptID, void(*func)()) {
-    build_interrupt(asmInterruptTable + (16*interruptID), (uint64_t)(void*)func);
+void Interrupt::setInterrupt(uint8_t interruptID, void(*func)(), uint8_t ist) {
+    build_interrupt(asmInterruptTable + (16*interruptID), (uint64_t)(void*)func, ist); // save on double fault and general protection
 }
 
 void Interrupt::init() {

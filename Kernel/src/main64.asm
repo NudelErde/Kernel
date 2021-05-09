@@ -1,5 +1,7 @@
 global long_mode_start
 global asmInterruptTable
+extern gdt64.code_segment
+extern gdt64.task_state_segment
 extern __kernel_main
 
 section .text
@@ -15,7 +17,6 @@ long_mode_start:
 
 	call __kernel_main
     hlt
-
 
 section .bss
 align 4096

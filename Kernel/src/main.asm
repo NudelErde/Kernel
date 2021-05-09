@@ -3,6 +3,7 @@ global multiboot_information_structure
 global page_table_l4
 global page_table_l3
 global page_table_l2
+global gdt64
 extern long_mode_start
 
 section .text
@@ -21,7 +22,7 @@ start:
 	call enable_paging
 
 	lgdt [gdt64.pointer]
-	jmp 8:long_mode_start
+	jmp 0b1000:long_mode_start
 
 	hlt
 
@@ -141,7 +142,6 @@ error:
 .error_end:
 	hlt
 
-
 section .bss
 align 4096
 page_table_l4:
@@ -155,12 +155,14 @@ stack_bottom:
 stack_top:
 multiboot_information_structure:
 	resb 4
-
 section .rodata
 gdt64:
 	dq 0 ; zero entry
 .code_segment: equ $ - gdt64
 	dq (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53) ; code segment
+.task_state_segment: equ $ - gdt64
+	dq 0
+	dq 0
 .pointer:
 	dw $ - gdt64 - 1 ; length
 	dq gdt64 ; address

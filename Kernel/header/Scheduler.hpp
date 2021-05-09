@@ -15,6 +15,8 @@ public:
     static void run();
     static void init();
     static uint64_t getCurrentRelativeTime();
+
+    static Process* getProcessById(uint64_t pid);
 };
 
 }
