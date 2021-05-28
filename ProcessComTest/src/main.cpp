@@ -107,7 +107,7 @@ int main() {
         registerInterProcessMethod(0, 1, (uint64_t) &printPidFromExtern, false);
         registerInterProcessMethod(1, 1, (uint64_t) &printStringFrom, false);
         
-        uint64_t pid = createProcess(getSystemDevice(), args /*arg0 is file name*/, "\0\0" /* no args*/);
+        uint64_t pid = createProcess(getSystemDevice(), args /*arg0 is file name*/, "\0\0" /* no args*/, false);
         print("[First] child pid: ");
         printBase(pid, 10, 1);
         print("\n");

@@ -25,7 +25,9 @@ union PageTableElement{
         volatile bool present: 1;
         volatile bool writeEnable: 1;
         volatile bool allowUserAccess: 1;
-        volatile uint16_t zero: 9;
+        volatile bool writeThrough: 1;
+        volatile bool cacheDisable: 1;
+        volatile uint16_t zero: 7;
     } flags;
     volatile uint64_t address;
 }__attribute__((__packed__));
@@ -62,15 +64,16 @@ public:
     MemoryPage(MemoryPage&&) noexcept;
     MemoryPage& operator=(MemoryPage&&) noexcept;
 
-    bool mapTo(uint64_t virtualAddress, bool writeable, bool userAccess);
+    bool mapTo(uint64_t virtualAddress, bool writeable, bool userAccess, bool cacheDisable = false, bool writeThrough = false);
     void remap();
     void unmap();
-    void softmap(uint64_t virtualAddress, bool writeable, bool userAccess);
+    void softmap(uint64_t virtualAddress, bool writeable, bool userAccess, bool cacheDisable = false, bool writeThrough = false);
 
     bool isValid();
     uint64_t getVirtualAddress();
 
     static uint64_t createNewPageTable();
+    static uint64_t getPhysicalAddressFromVirtual(uint64_t address);
 private:
 
     uint64_t physicalAddress{};
@@ -81,6 +84,8 @@ private:
 
     bool writeable;
     bool userAccess;
+    bool cacheDisable;
+    bool writeThrough;
 };
 
 void memcpy(void* dest, const void* src, uint64_t count);

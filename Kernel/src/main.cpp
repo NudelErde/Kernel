@@ -21,6 +21,10 @@
 #include "Scheduler.hpp"
 #include "tss.hpp"
 #include "debug.hpp"
+#include "USB.hpp"
+#include "MassStorage.hpp"
+#include "AHCI.hpp"
+#include "SharedInterrupts.hpp"
 
 //docker run --rm -v "${pwd}:/root/env" myos-buildenv make build-x86_64; qemu-system-x86_64 -cdrom dist/kernel.iso -drive file=image_file,format=raw -L "C:\Program Files\qemu" -m 6G --serial stdio -boot d
 
@@ -30,6 +34,36 @@ extern uint8_t kernel_start;
 extern uint8_t kernel_end;
 
 extern uint8_t gdt64[] asm("gdt64");
+
+USB* usb;
+
+extern "C" void __cxa_pure_virtual() { asm("int $32"); }
+
+void loadPCI(bool withText) {
+    LinkedList<PCIDeviceData> pciDevices = PCI::checkAllBuses();
+    
+    bool cont = true;
+    if(withText) kout << "Unused pci devices: \n";
+    for(auto iter = pciDevices.getIterator(); iter.valid() && cont; cont = iter.next()) {
+        auto d = iter.get();
+        PCICommonHeader header;
+        PCI::readCommonHeader(header, d->bus, d->device, d->function);
+        if(header.classCode == 0x01 && header.subclass == 0x01) {
+            if(withText) kout << "Found ATA controller\n";
+            ATA::openController(d->bus, d->device, d->function, header);
+        } else if(header.classCode == 0x01 && header.subclass == 0x06 && header.progIF == 0x01) {
+            if(withText) kout << "Found AHCI controller\n";
+            AHCI::openController(d->bus, d->device, d->function, header);
+        } else if(header.classCode == 0x0C && header.subclass == 0x03) {
+            if(withText) kout << "Found USB controller\n";
+            usb = USB::openController(d->bus, d->device, d->function, header);
+        } else {
+            if(header.classCode == 0x06)
+                continue; // skip bridge devices
+            if(withText) kout << "Class: " << Hex(header.classCode) << " Subclass: " << Hex(header.subclass)  << " ProgIf: " << Hex(header.progIF) << '\n';
+        }
+    }
+}
 
 void kern_start() {
     crc32c_init();
@@ -43,6 +77,7 @@ void kern_start() {
     Interrupt::init();
     initExceptionHandlers();
     initSleep();
+    Debug::init();
     PhysicalMemoryManagment::init();
 
     setupTss((uint64_t)gdt64, 2);
@@ -50,29 +85,27 @@ void kern_start() {
     readACPITables();
     
     IoAPIC* apics = IoAPIC::initIOApics(nullptr);
-    apics[0].setMapping(2, 240, 0); // map legacy pit interrupt to 240
+    apics[0].setMapping(getAPICMapping(0), 240, 0); // map legacy pit interrupt to 240
     LocalAPIC::enable();
     LocalAPIC::setupSleep();
+    SharedInterrupt::init();
 
     Scheduler::init();
     Process::init();
 
-    PCI::checkAllBuses();
+    loadPCI(false);
 
-    uint64_t count = ATA::getDeviceCount();
+    uint64_t count = Device::getDeviceCount();
 
-    ATA::Device* hardDisk;
-
-    for(uint64_t index = 0; index < count; ++index) {
-        ATA::Device* device = ATA::getDevice(index);
-        if(device->sectorCount > 0 && !device->isATAPI) {
-            hardDisk = device;
-            ATA::setSystemDevice(index);
-        }
+    if(count == 0) {
+        kout << "No devices found\n";
+        asm("hlt");
     }
 
-    EXT4 ext(*hardDisk, 0);
+    Device* hardDisk = Device::getDevice(Device::getSystemDevice());
+
+    EXT4 ext(hardDisk, 0);
     const char* args = "/startup.elf\0osboot\0";
-    loadAndExecute(ext, args, args, 0); /*filename is first arg*/
+    loadAndExecute(ext, args, args, 0, false); /*filename is first arg*/
     Scheduler::run();
 }

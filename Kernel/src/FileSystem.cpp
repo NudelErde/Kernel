@@ -12,10 +12,10 @@
 
 namespace Kernel {
 
-EXT4::EXT4(ATA::Device& device, uint8_t partitionID): device(device), partitionID(partitionID) {
-    partition = getPartition(device, partitionID);
+EXT4::EXT4(Device* device, uint8_t partitionID): device(device), partitionID(partitionID) {
+    partition = getPartition(*device, partitionID);
     superBlock = new SuperBlock();
-    device.read(partition.LBAStart + 2, 2, (uint8_t*)superBlock);
+    device->read(partition.LBAStart + 2, 2, (uint8_t*)superBlock);
     if(!superBlock->s_feature_incompat & 0x80) { //64 bit
         superBlock->s_desc_size = 32;
     }
@@ -111,7 +111,7 @@ bool EXT4::travelExtentTree(const uint8_t* extentPtr, uint64_t sector, void(*cal
                     {
                         uint8_t* blockBuffer = new uint8_t[blockSize];
                     
-                        device.read(partition.LBAStart + blockPosition * sectorsPerBlock, sectorsPerBlock, blockBuffer);
+                        device->read(partition.LBAStart + blockPosition * sectorsPerBlock, sectorsPerBlock, blockBuffer);
                         result = travelExtentTree(extentPtr, sector, callback, self); // look for block in sub extent tree
                         
                         delete[] blockBuffer;
@@ -130,8 +130,8 @@ bool EXT4::travelExtentTree(const uint8_t* extentPtr, uint64_t sector, void(*cal
 bool EXT4::getSectorInFile(const INode& inode, uint8_t* buffer, uint64_t sector) {
     struct Info{
         uint8_t* buffer;
-        ATA::Device* device;
-    } info {buffer, &device};
+        Device* device;
+    } info {buffer, device};
     return travelExtentTree((uint8_t*)inode.i_block, sector, [](void* self, uint64_t sec){
             Info* info = (Info*)self;
             info->device->read(sec, 1, info->buffer);
@@ -141,8 +141,8 @@ bool EXT4::getSectorInFile(const INode& inode, uint8_t* buffer, uint64_t sector)
 bool EXT4::setSectorInFile(const INode& inode, uint8_t* buffer, uint64_t sector) {
     struct Info{
         uint8_t* buffer;
-        ATA::Device* device;
-    } info {buffer, &device};
+        Device* device;
+    } info {buffer, device};
 
     return travelExtentTree((uint8_t*)inode.i_block, sector, [](void* self, uint64_t sec){
             Info* info = (Info*)self;
@@ -171,7 +171,7 @@ bool EXT4::writeGroupDesc(uint64_t groupNum, const GroupDesc& desc) {
     uint64_t offset = groupNum * superBlock->s_desc_size;
     uint64_t subOffset = offset % 512;
     uint8_t sector[512];
-    device.read(partition.LBAStart + (1 * sectorsPerBlock) + (offset / 512), 1, sector);
+    device->read(partition.LBAStart + (1 * sectorsPerBlock) + (offset / 512), 1, sector);
 
     if(superBlock->s_feature_incompat & 0x80 /*64 bit*/) {
         *(GroupDesc*)(sector + subOffset) = desc;
@@ -179,7 +179,7 @@ bool EXT4::writeGroupDesc(uint64_t groupNum, const GroupDesc& desc) {
         memcpy(sector + subOffset, &desc, 32);
     }
 
-    device.write(partition.LBAStart + (1 * sectorsPerBlock) + (offset / 512), 1, sector);
+    device->write(partition.LBAStart + (1 * sectorsPerBlock) + (offset / 512), 1, sector);
 
     return true;
 }
@@ -194,7 +194,7 @@ uint64_t EXT4::findFreeINode() {
     superBlock->s_first_ino = nextFree;
     superBlock->s_inodes_count--;
     superBlock->s_checksum = getSuperblockChecksum();
-    device.write(partition.LBAStart + 2, sizeof(SuperBlock) / 512, (uint8_t*)superBlock);
+    device->write(partition.LBAStart + 2, sizeof(SuperBlock) / 512, (uint8_t*)superBlock);
 
     return freeINode;
 }
@@ -210,12 +210,12 @@ bool EXT4::useBlocks(uint64_t first, uint64_t count, bool value) {
     superBlock->s_free_blocks_count_lo = (uint32_t)(count & 0xFFFFFFFF);
     superBlock->s_free_blocks_count_hi = (uint32_t)(count >> 32);
     superBlock->s_checksum = getSuperblockChecksum();
-    device.write(partition.LBAStart + 2, sizeof(SuperBlock) / 512, (uint8_t*)superBlock);
+    device->write(partition.LBAStart + 2, sizeof(SuperBlock) / 512, (uint8_t*)superBlock);
 
     while(count) {
         GroupDesc desc = getGroupDesc(group);
         uint64_t blockBitmap = desc.bg_block_bitmap_lo | (((uint64_t)desc.bg_block_bitmap_hi) << 32);
-        device.read(partition.LBAStart + blockBitmap * sectorsPerBlock, bitmapBufferSize / 512, bitmap);
+        device->read(partition.LBAStart + blockBitmap * sectorsPerBlock, bitmapBufferSize / 512, bitmap);
         
         for(;offset < superBlock->s_blocks_per_group && count; ) {
             //write value in bit at offset
@@ -234,7 +234,7 @@ bool EXT4::useBlocks(uint64_t first, uint64_t count, bool value) {
                 ++offset;
             }
         }
-        device.write(partition.LBAStart + blockBitmap * sectorsPerBlock, bitmapBufferSize / 512, bitmap);
+        device->write(partition.LBAStart + blockBitmap * sectorsPerBlock, bitmapBufferSize / 512, bitmap);
         
         uint32_t myChecksum = crc32c(0, superBlock->s_uuid, sizeof(superBlock->s_uuid));
         myChecksum = crc32c(myChecksum, bitmap, bitmapBufferSize);
@@ -264,7 +264,7 @@ bool EXT4::writeINode(const INode& node, uint64_t inodeNum) {
     uint64_t inodeTableSector = inodeTableBlock * sectorsPerBlock;
     
     uint8_t sector[512]{};
-    device.read(partition.LBAStart + inodeTableSector + offset / 512, 1, sector);
+    device->read(partition.LBAStart + inodeTableSector + offset / 512, 1, sector);
     
     uint32_t inodeChecksum = generateINodeChecksum(node, inodeNum);
 
@@ -272,7 +272,7 @@ bool EXT4::writeINode(const INode& node, uint64_t inodeNum) {
     ((INode*)(sector + (offset % 512)))->osd2.linux2.l_i_checksum_lo = (uint16_t)(inodeChecksum & 0xFFFF);
     ((INode*)(sector + (offset % 512)))->i_checksum_hi = (uint16_t)(inodeChecksum >> 16);
 
-    device.write(partition.LBAStart + inodeTableSector + offset / 512, 1, sector);
+    device->write(partition.LBAStart + inodeTableSector + offset / 512, 1, sector);
     return true;
 }
 bool EXT4::increaseFileSize(uint64_t inodeNum, uint64_t size) {
@@ -424,7 +424,7 @@ bool EXT4::isINodeUsed(uint64_t inodeNum) {
     inodeBitmap |= ((uint64_t)g.bg_inode_bitmap_hi) << 32;
 
     uint8_t buffer[512];
-    device.read(partition.LBAStart + inodeBitmap * sectorsPerBlock + sectorOffset, 1, buffer);
+    device->read(partition.LBAStart + inodeBitmap * sectorsPerBlock + sectorOffset, 1, buffer);
     return (buffer[byteIndex] >> bitIndex);
 }
 
@@ -516,7 +516,7 @@ bool EXT4::isBlockUsed(uint64_t blockNum) {
     }
     if(lastBlockBitmapIndex != blockBitmap) {
         lastBlockBitmapIndex = blockBitmap;
-        device.read(partition.LBAStart + blockBitmap * sectorsPerBlock + sectorOffset, 1, lastBlockBitmap);
+        device->read(partition.LBAStart + blockBitmap * sectorsPerBlock + sectorOffset, 1, lastBlockBitmap);
     }
     
     return (lastBlockBitmap[byteIndex] >> bitIndex);
@@ -539,7 +539,7 @@ EXT4::INode EXT4::getINode(uint64_t inodeNum) {
     uint64_t inodeTableSector = inodeTableBlock * sectorsPerBlock;
     
     uint8_t sector[512]{};
-    device.read(partition.LBAStart + inodeTableSector + offset / 512, 1, sector);
+    device->read(partition.LBAStart + inodeTableSector + offset / 512, 1, sector);
     
     value = *(INode*)(sector + (offset % 512));
 
@@ -551,7 +551,7 @@ EXT4::GroupDesc EXT4::getGroupDesc(uint64_t groupNum) {
     uint64_t offset = groupNum * superBlock->s_desc_size;
     uint64_t subOffset = offset % 512;
     uint8_t sector[512];
-    device.read(partition.LBAStart + (1 * sectorsPerBlock) + (offset / 512), 1, sector);
+    device->read(partition.LBAStart + (1 * sectorsPerBlock) + (offset / 512), 1, sector);
 
     if(superBlock->s_feature_incompat & 0x80 /*64 bit*/) {
         desc = *(GroupDesc*)(sector + subOffset);

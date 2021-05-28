@@ -19,7 +19,7 @@ void onPageFault(const Interrupt& i) {
     :
     :);
     kout << "Page fault at 0x" << Hex(mem) << '\n';
-    printDebugInfo(i.stackFrame);
+    Debug::printDebugInfo(i.stackFrame);
 
     asm("hlt");
 }

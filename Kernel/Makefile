@@ -16,7 +16,7 @@ $(c_object_files): build/c_object_files/%.o : src/%.c
 
 $(cpp_object_files): build/cpp_object_files/%.o : src/%.cpp
 	mkdir -p $(dir $@) && \
-	x86_64-elf-g++ -c -I header -std=c++17 -Wno-literal-suffix -fno-exceptions -mgeneral-regs-only -mno-red-zone -mgeneral-regs-only -ffreestanding $(patsubst build/cpp_object_files/%.o, src/%.cpp, $@) -o $@
+	x86_64-elf-g++ -c -I header -std=c++17 -Wno-literal-suffix -fno-exceptions -fno-rtti -mgeneral-regs-only -mno-red-zone -mgeneral-regs-only -ffreestanding $(patsubst build/cpp_object_files/%.o, src/%.cpp, $@) -o $@
 
 $(asm_object_files): build/asm_object_files/%.o : src/%.asm
 	mkdir -p $(dir $@) && \

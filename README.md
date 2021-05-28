@@ -3,7 +3,7 @@
 ## Building
 
 Use `docker run --rm -v "${pwd}/Kernel:/root/env" [dockername] make build-x86_64` to build the kernel.  
-Use `qemu-system-x86_64 -cdrom Kernel/dist/kernel.iso -drive file=Kernel/image_file,format=raw -m 6G --serial stdio -boot d -smp 4` to run the Kernel in
+Use `qemu-system-x86_64 -nodefaults -readconfig Kernel/qemuConfig.cfg -L "C:\Program Files\qemu" --serial stdio -smp 4 -device usb-kbd` to run the Kernel in
 the default configuration.  
 The buildtool is currently windows specific.  
 To build a program create a directory and place the .cpp source files in the `src` subdirectory.  

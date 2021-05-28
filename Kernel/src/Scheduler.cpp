@@ -24,24 +24,6 @@ namespace Kernel{
 
     static bool removed;
 
-    void onInvalidOpcode(const Interrupt& inter) {
-        if(inter.hasErrorCode) {
-            kout << "Error code: " << inter.errorCode << '\n';
-        }
-        kout << "Invalid Opcode\n";
-        printDebugInfo(inter.stackFrame);
-        asm("hlt");
-    }
-
-    void onDebug3(const Interrupt& inter) {
-        kout << "Breakpoint\n";
-        printDebugInfo(inter.stackFrame);
-    }
-
-    void onDebug(const Interrupt& inter) {
-        debugHandler(inter.stackFrame);
-    }
-
     Process* Scheduler::getProcessById(uint64_t pid) {
         if(Thread::isInProgram())
             getKernelMemoryManager().reload();
@@ -59,6 +41,25 @@ namespace Kernel{
         if(Thread::isInProgram())
             Process::getLastLoadedProcess()->reload();
         return proc;
+    }
+
+    Thread* Scheduler::getThreadById(uint64_t tid) {
+        if(Thread::isInProgram())
+            getKernelMemoryManager().reload();
+        
+        Thread* thread = nullptr;
+
+        bool searching = true;
+        for(auto iter = threadList->getIterator() ; iter.valid() && searching; searching = iter.next()) {
+            if(iter.get()->getTID() == tid) {
+                thread = iter.get();
+                break;
+            }
+        }
+
+        if(Thread::isInProgram())
+            Process::getLastLoadedProcess()->reload();
+        return thread;
     }
 
     uint8_t memoryPageBuffer[sizeof(MemoryPage)];
@@ -117,9 +118,19 @@ namespace Kernel{
             if(currentThread->getEarliestSchedule() > currentRelativeTime) {
                 continue; // continue doesn't stop the timer -> next iteration should have different relative time
             }
-            if(currentThread->waitingForPID != 0) {
+            
+            bool isLocked = false;
+            for(uint8_t i = 0; i < 32; ++i) {
+                if(currentThread->locks[i] != 0) {
+                    isLocked = true;
+                    break;
+                }
+            }
+            asm("hlt");
+            if(isLocked) {
                 continue;
             }
+
             bool cont = true;
             Process* proc = nullptr;;
             LinkedList<Process>::Iterator procIter = processList->getIterator();
@@ -157,18 +168,13 @@ namespace Kernel{
             }
             if(proc->threads == 0) { // process finished
                 uint64_t val = proc->getReturnValue();
-                uint64_t thePid = proc->getPID();
+                for(uint8_t i = 0; i < 32; ++i) {
+                    if(proc->finishLocks[i].tid) {
+                        getThreadById(proc->finishLocks[i].tid)->clearLock(proc->finishLocks[i].tid);
+                    }
+                }
                 procIter.remove();
                 getKernelMemoryManager().reload();
-                auto iter = threadList->getIterator();
-                do {
-                    auto obj = iter.get();
-
-                    if(obj->waitingForPID == thePid) {
-                        obj->waitingForPID = 0;
-                        obj->waitingForExitValue = val;
-                    }
-                } while(iter.next());
             }
             if(removed) {
                 iter.remove();
@@ -183,8 +189,5 @@ namespace Kernel{
         processList = (LinkedList<Process>*)processListBuffer;
         removed = false;
         currentRelativeTime = 100;
-        Interrupt::setHandler(6, onInvalidOpcode);
-        Interrupt::setHandler(3, onDebug3);
-        Interrupt::setHandler(1, onDebug);
     }
 }

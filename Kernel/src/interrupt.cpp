@@ -3,6 +3,7 @@
 #include "stdint.h"
 #include "stddef.h"
 #include "inout.hpp"
+#include "debug.hpp"
 #include "print.hpp"
 
 extern uint8_t asmInterruptTable[] asm("asmInterruptTable");
@@ -116,6 +117,7 @@ static void noDefaultInterruptHandlerFound(const Interrupt& inter){
     if(inter.isHardwareInterrupt) {
         Interrupt::sendHardwareEOI(inter.interruptNumber);
     }
+    Debug::printDebugInfo(inter.stackFrame);
     asm("hlt");
 }
 

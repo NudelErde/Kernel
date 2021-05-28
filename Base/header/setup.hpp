@@ -3,7 +3,7 @@
 
 void exit(uint64_t exitCode);
 uint64_t getpid();
-uint64_t createProcess(uint64_t device, const char* path, const char* args);
+uint64_t createProcess(uint64_t device, const char* path, const char* args, bool withDebug);
 void sleep(uint64_t microseconds);
 void* malloc(uint64_t size);
 void free(void* ptr);

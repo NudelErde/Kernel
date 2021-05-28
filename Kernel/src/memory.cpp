@@ -278,7 +278,7 @@ uint64_t PhysicalMemoryManagment::getFreeKernelPage() {
     uint64_t searchStart = lastKernelPage;
     lastKernelPage += pageSize;
     for(;lastKernelPage != searchStart; lastKernelPage += pageSize) {
-        if(lastKernelPage >= 0x40000000) {
+        if(lastKernelPage >= 1Gi) {
             lastKernelPage = 0; // if kernel end reached start again at Kernel space start
         }
         if(isValidMemory(lastKernelPage) && !isUsed(lastKernelPage)) {
@@ -286,6 +286,34 @@ uint64_t PhysicalMemoryManagment::getFreeKernelPage() {
         }
     }
     return 0;
+}
+
+uint64_t MemoryPage::getPhysicalAddressFromVirtual(uint64_t address) {
+    if(address < 1Gi)
+        return address; // low memory is identity mapped
+    uint64_t offset = address & (pageSize - 1);
+    address &= ~(pageSize - 1);
+    uint64_t l4Index = ((address >> 39) & 0x1FF); // to 9 bit
+    uint64_t l3Index = ((address >> 30) & 0x1FF); // to 9 bit
+    uint64_t l2Index = ((address >> 21) & 0x1FF); // to 9 bit
+    uint64_t l1Index = ((address >> 12) & 0x1FF); // to 9 bit
+    page_table_l4.elements[l4Index];
+    volatile PageTableElement* l4Element = &page_table_l4.elements[l4Index];
+    if(!l4Element->flags.present)
+        return 0;
+    PageTable* l3Table = (PageTable*)(l4Element->address & ~0xFFF);
+    volatile PageTableElement* l3Element = &l3Table->elements[l3Index];
+    if(!l3Element->flags.present)
+        return 0;
+    PageTable* l2Table = (PageTable*)(l3Element->address & ~0xFFF);
+    volatile PageTableElement* l2Element = &l2Table->elements[l2Index];
+    if(!l2Element->flags.present)
+        return 0;
+    PageTable* l1Table = (PageTable*)(l2Element->address & ~0xFFF);
+    volatile PageTableElement* l1Element = &l1Table->elements[l1Index];
+    if(!l1Element->flags.present)
+        return 0;
+    return (l1Element->address & ~0xFFF) | offset;
 }
 
 MemoryPage::MemoryPage(uint64_t physicalAddress): MemoryPage(physicalAddress, false) {}
@@ -317,19 +345,20 @@ MemoryPage::~MemoryPage() {
     }
 }
 
-void MemoryPage::softmap(uint64_t virtualAddress, bool writeable, bool userAccess) {
+void MemoryPage::softmap(uint64_t virtualAddress, bool writeable, bool userAccess, bool cacheDisable, bool writeThrough) {
     MemoryPage::virtualAddress = virtualAddress;
     MemoryPage::writeable = writeable;
     MemoryPage::userAccess = userAccess;
+    MemoryPage::cacheDisable = cacheDisable;
+    MemoryPage::writeThrough = writeThrough;
 }
 
-bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess) {
+bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess, bool cacheDisable, bool writeThrough) {
     virtualAddress &=  0xFFFFFFFFF000; // 48 bit virtual address max and page start
     uint64_t l4Index = ((virtualAddress >> 39) & 0x1FF); // to 9 bit
     uint64_t l3Index = ((virtualAddress >> 30) & 0x1FF); // to 9 bit
     uint64_t l2Index = ((virtualAddress >> 21) & 0x1FF); // to 9 bit
     uint64_t l1Index = ((virtualAddress >> 12) & 0x1FF); // to 9 bit
-
 
     volatile PageTableElement* l4Element = &page_table_l4.elements[l4Index];
     if(!l4Element->flags.present) {
@@ -338,8 +367,10 @@ bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess)
             return false;
         l4Element->address = newPageTable;
         l4Element->flags.present = true;
-        l4Element->flags.writeEnable |= writeable;
-        l4Element->flags.allowUserAccess |= userAccess;
+        l4Element->flags.writeEnable = writeable;
+        l4Element->flags.allowUserAccess = userAccess;
+        l4Element->flags.writeThrough = false;
+        l4Element->flags.cacheDisable = false;
         l4Element->flags.zero = 0;
         reloadPageTables((uint64_t)l4Element);
     }
@@ -351,8 +382,10 @@ bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess)
             return false;
         l3Element->address = newPageTable;
         l3Element->flags.present = true;
-        l3Element->flags.writeEnable |= writeable;
-        l3Element->flags.allowUserAccess |= userAccess;
+        l3Element->flags.writeEnable = writeable;
+        l3Element->flags.allowUserAccess = userAccess;
+        l3Element->flags.writeThrough = false;
+        l3Element->flags.cacheDisable = false;
         l3Element->flags.zero = 0;
         reloadPageTables((uint64_t)l3Element);
     }
@@ -364,8 +397,10 @@ bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess)
             return false;
         l2Element->address = newPageTable;
         l2Element->flags.present = true;
-        l2Element->flags.writeEnable |= writeable;
-        l2Element->flags.allowUserAccess |= userAccess;
+        l2Element->flags.writeEnable = writeable;
+        l2Element->flags.allowUserAccess = userAccess;
+        l2Element->flags.writeThrough = false;
+        l2Element->flags.cacheDisable = false;
         l2Element->flags.zero = 0;
         reloadPageTables((uint64_t)l2Element);
     }
@@ -381,6 +416,8 @@ bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess)
     l1Element->flags.present = true;
     l1Element->flags.writeEnable = writeable;
     l1Element->flags.allowUserAccess = userAccess;
+    l1Element->flags.cacheDisable = cacheDisable;
+    l1Element->flags.writeThrough = writeThrough;
     l1Element->flags.zero = 0;
     reloadPageTables((uint64_t)l1Element);
     MemoryPage::entry = l1Element;
@@ -391,7 +428,7 @@ bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess)
 }
 
 void MemoryPage::remap() {
-    mapTo(virtualAddress, writeable, userAccess);
+    mapTo(virtualAddress, writeable, userAccess, cacheDisable, writeThrough);
 }
 
 void MemoryPage::unmap() {

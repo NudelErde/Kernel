@@ -2,6 +2,7 @@
 #include "stdint.h"
 #include "PCI.hpp"
 #include "inout.hpp"
+#include "MassStorage.hpp"
 
 namespace Kernel {
 
@@ -68,29 +69,29 @@ public:
     void readBuffer(uint8_t* buffer, uint64_t size);
 
     uint16_t readIO16(uint8_t offset) {
-        return in16(ioBase + offset);
+        return PCI::readBAR16(ioBase, offset);
     }
     uint16_t readControl16(uint8_t offset) {
-        return in16(controlBase + offset);
+        return PCI::readBAR16(controlBase, offset);
     }
     uint8_t readIO8(uint8_t offset) {
-        return inb(ioBase + offset);
+        return PCI::readBAR8(ioBase, offset);
     }
     uint8_t readControl8(uint8_t offset) {
-        return inb(controlBase + offset);
+        return PCI::readBAR8(controlBase, offset);
     }
 
     inline void writeIO16(uint8_t offset, uint16_t data) {
-        out16(offset + ioBase, data);
+        PCI::writeBAR16(ioBase, offset, data);
     }
     inline void writeControl16(uint8_t offset, uint16_t data) {
-        out16(offset + controlBase, data);
+        PCI::writeBAR16(controlBase, offset, data);
     }
     inline void writeIO8(uint8_t offset, uint8_t data) {
-        outb(offset + ioBase, data);
+        PCI::writeBAR8(ioBase, offset, data);
     }
     inline void writeControl8(uint8_t offset, uint8_t data) {
-        outb(offset + controlBase, data);
+        PCI::writeBAR8(controlBase, offset, data);
     }
 
 private:
@@ -99,8 +100,9 @@ private:
     uint32_t controlBase;
 };
 
-class Device {
+class ATADevice : public Device{
 public:
+    virtual ~ATADevice();
     uint16_t signature;
     uint16_t capabilities;
     uint32_t commandSet;
@@ -111,15 +113,10 @@ public:
     bool isSlave;
     bool lba48Support;
     
-    void read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* dest);
-    void write(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* src);
-    void flush();
+    void read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* dest) override;
+    void write(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* src) override;
+    void flush() override;
 };
-
-uint64_t getDeviceCount();
-Device* getDevice(uint64_t index);
-uint64_t getSystemDevice();
-void setSystemDevice(uint64_t device);
 
 void openController(uint8_t bus, uint8_t device, uint8_t func, const PCICommonHeader& header);
 

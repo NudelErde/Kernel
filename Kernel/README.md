@@ -18,7 +18,6 @@ Docker is used as an build environment. Create the docker image with:
 
 The operating system can be emulated using [Qemu](https://www.qemu.org/)
 
- * `qemu-system-x86_64 -cdrom dist/x86_64/kernel.iso`
+ * `qemu-system-x86_64 -nodefaults -readconfig Kernel/qemuConfig.cfg --serial stdio -smp 4 -device usb-kbd`
 
-You should specify a memory size with `-m` and a serial port with `--serial`.  
 I don't know why, but my qemu command won't work without `-L "C:\Program Files\qemu"`.

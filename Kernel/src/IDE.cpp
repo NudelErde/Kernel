@@ -15,14 +15,6 @@ namespace Kernel{
 
 namespace ATA {
 
-struct ATALinkedList{
-    Device device;
-    ATALinkedList* next;
-};
-
-static ATALinkedList* list;
-static uint64_t count;
-
 static void poll(Channel& channel) {
     for(uint8_t i = 0; i < 14; ++i) {
         channel.readControl8(0); //wait 420 ns
@@ -31,7 +23,7 @@ static void poll(Channel& channel) {
     return;
 }
 
-static bool checkForDevice(Channel& channel, uint8_t isSlave, Device& device) {
+static bool checkForDevice(Channel& channel, uint8_t isSlave, ATADevice& device) {
     channel.writeIO8(6, 0xA0 | (isSlave << 4)); // 0xA0 for CHS
     sleep(1);
     channel.writeIO8(7, CommandIdentify);
@@ -100,26 +92,21 @@ static bool checkForDevice(Channel& channel, uint8_t isSlave, Device& device) {
     return true;
 }
 
-static void insert(const Device& dev) {
-    if(!list) {
-        list = new ATALinkedList();
-        list->device = dev;
-        list->next = nullptr;
-    } else {
-        ATALinkedList* l = new ATALinkedList();
-        l->next = list;
-        l->device = dev;
-        list = l;
+ATADevice::~ATADevice() {}
+
+static void insert(const ATADevice& dev) {
+    uint64_t deviceId = Device::addDevice(new ATADevice(dev));
+    if(dev.sectorCount > 0 && !dev.isATAPI) {
+        Device::setSystemDevice(deviceId);
     }
-    ++count;
 }
 
 static void checkForDevices(Channel& channel) {
-    Device master;
+    ATADevice master;
     if(checkForDevice(channel, false, master)) {
         insert(master);
     }
-    Device slave;
+    ATADevice slave;
     if(checkForDevice(channel, true, slave)) {
         insert(slave);
     }
@@ -137,13 +124,13 @@ void openController(uint8_t bus, uint8_t device, uint8_t func, const PCICommonHe
     uint8_t interruptPinSecondary = interruptPinPrimary;
 
     if(!(header.progIF & 0b1)) {
-        BAR0 = 0x01F0;
-        BAR1 = 0x03F6;
+        BAR0 = 0x01F0 | 0b1;
+        BAR1 = 0x03F6 | 0b1;
         interruptPinPrimary = 14;
     }
     if(!(header.progIF & 0b100)) {
-        BAR2 = 0x0170;
-        BAR3 = 0x0376;
+        BAR2 = 0x0170 | 0b1;
+        BAR3 = 0x0376 | 0b1;
         interruptPinSecondary = 15;
     }
     if(!(header.progIF & 0b10000000)) {
@@ -165,35 +152,11 @@ Channel::Channel(uint32_t BAR0, uint32_t BAR1): ioBase(BAR0), controlBase(BAR1) 
 void Channel::readBuffer(uint8_t* buffer, uint64_t size) {
     for(uint64_t i = 0; i < size / 2; ++i) {
         while(!(readIO8(7) & StatusDataRequestReady));
-        ((uint16_t*)buffer)[i] = in16(ioBase);
+        ((uint16_t*)buffer)[i] = readIO16(0);
     }
 }
 
-uint64_t getDeviceCount() {
-    return count;
-}
-
-Device* getDevice(uint64_t index) {
-    ATALinkedList* node = list;
-    for(uint64_t i = 0; i < index; ++i) {
-        node = node->next;
-        if(!node)
-            return nullptr;
-    }
-    return &(node->device);
-}
-
-static uint64_t systemDevice;
-
-void setSystemDevice(uint64_t device) {
-    systemDevice = device;
-}
-
-uint64_t getSystemDevice() {
-    return systemDevice;
-}
-
-void Device::read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* dest){
+void ATADevice::read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* dest){
     if (sectorCount == 0)
         return;
 
@@ -233,7 +196,7 @@ void Device::read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* dest){
         ((uint16_t *)dest)[index] = channel.readIO16(0);
     }
 }
-void Device::write(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* src){
+void ATADevice::write(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* src){
     if (sectorCount == 0)
         return;
 
@@ -274,7 +237,7 @@ void Device::write(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* src){
     }
 }
 
-void ATA::Device::flush() {
+void ATADevice::flush() {
     channel.writeIO8(6, 0b11100000 | (isSlave << 4)); //LBA mode
     if (lba48Support) {
         channel.writeIO8(7, CommandCacheFlushExt);

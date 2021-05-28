@@ -66,6 +66,11 @@ namespace Kernel {
         uint8_t digits;
     };
 
+    struct BitList{
+        inline BitList(uint64_t bits): bits(bits) {}
+        uint64_t bits;
+    };
+
     struct Bin{
         inline Bin(uint64_t bin, uint8_t digits = 1): bin(bin), digits(digits) {}
 
@@ -78,6 +83,7 @@ namespace Kernel {
 
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, uint64_t n);
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, Kernel::Hex n);
+Kernel::KernelOut& operator<<(Kernel::KernelOut& out, Kernel::BitList n);
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, Kernel::Bin n);
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, char n);
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const char* n);

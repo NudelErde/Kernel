@@ -19,14 +19,14 @@ namespace Kernel {
         result[1] |= (uint8_t)((cylinder & 0b1100000000) >> 2);
         result[2] = (uint8_t)(cylinder & 0xFF);
     }
-    void createMBR(ATA::Device& device) {
+    void createMBR(Device& device) {
         char MasterBootRecordSector[512]{};
         MasterBootRecordSector[510] = 0x55;
         MasterBootRecordSector[511] = 0xAA;
         device.write(0, 1, (uint8_t*)MasterBootRecordSector);
         device.flush();
     }
-    void setPartition(ATA::Device& device, uint8_t partitionID, uint64_t start, uint64_t end, uint8_t type, bool bootable) {
+    void setPartition(Device& device, uint8_t partitionID, uint64_t start, uint64_t end, uint8_t type, bool bootable) {
         uint8_t MasterBootRecordSector[512]{};
         device.read(0, 1, (uint8_t*)MasterBootRecordSector);
         if(!(MasterBootRecordSector[510] == 0x55 && MasterBootRecordSector[511] == 0xAA)) {
@@ -70,9 +70,9 @@ namespace Kernel {
         device.flush();
     }
 
-    Partition getPartition(ATA::Device& device, uint8_t partitionID) {
+    Partition getPartition(Device& device, uint8_t partitionID) {
         Partition part;
-        uint8_t MasterBootRecordSector[512];
+        uint8_t MasterBootRecordSector[512]{};
         device.read(0, 1, MasterBootRecordSector);
         if(!(MasterBootRecordSector[510] == 0x55 && MasterBootRecordSector[511] == 0xAA)) {
             return {};

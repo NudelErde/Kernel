@@ -135,6 +135,12 @@ static void readFADT(uint8_t* fadtPointer) {
     setCenturyRegister(fadt->Century);
 }
 
+static uint64_t interruptRedirectionData[16]{};
+
+uint64_t getAPICMapping(uint8_t source) {
+    return interruptRedirectionData[source];
+}
+
 static void readAPIC(void* ptr) {
     struct APICTable{
         ACPISDTHeader acpiHeader;
@@ -166,6 +172,7 @@ static void readAPIC(void* ptr) {
             uint32_t globalSystemInterrupt;
             memcpy(&globalSystemInterrupt, data + 4, 4);
             uint16_t flags;
+            interruptRedirectionData[irqSource] = globalSystemInterrupt;
             memcpy(&flags, data + 8, 2);
         } else if(data[0] == 4) {
             uint8_t processorId = data[0];

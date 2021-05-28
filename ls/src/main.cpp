@@ -34,7 +34,7 @@ int main(int argc, const char* argv[]) {
     }
     uint64_t inode = getINodeOfPath(systemDevice, requestedPath);
     if(!inode || getFlagsOfINode(systemDevice, inode) & 0x4000 == 0) {
-        print("Directory not found");
+        print("Directory not found\n");
         return 1;
     }
     DirectoryEntry entries[8];

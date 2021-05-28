@@ -6,6 +6,7 @@
 #include "IDE.hpp"
 #include "FileSystem.hpp"
 #include "SharedMemory.hpp"
+#include "debug.hpp"
 
 namespace Kernel {
 
@@ -30,12 +31,13 @@ namespace Kernel {
                         const char* path;
                         const char* argumentsArray;
                         uint64_t pid;
+                        bool loadWithDebug;
                     };
                     SpawnRequest* req = (SpawnRequest*)c;
                     const char* processPath = req->path;
-                    ATA::Device* device = ATA::getDevice(req->deviceID);
-                    EXT4 ext(*device, 0);
-                    uint64_t pid = loadAndExecute(ext, processPath, req->argumentsArray, lastProcess->getPID());
+                    Device* device = Device::getDevice(req->deviceID);
+                    EXT4 ext(device, 0);
+                    uint64_t pid = loadAndExecute(ext, processPath, req->argumentsArray, lastProcess->getPID(), req->loadWithDebug);
                     lastProcess->reload();
                     current->reload();
                     req->pid = pid;
@@ -63,10 +65,12 @@ namespace Kernel {
             case 0x0A: // free shared memory page
                 lastProcess->unuseSharedMemoryPage(c);
                 return;
-            case 0x0B:
-                current->waitForPID(c);
-                Thread::toKernel();
-                *((uint64_t*)d) = current->waitForPIDResult();
+            case 0x0B: {
+                    uint8_t lockID = current->makeLock();
+                    Scheduler::getProcessById(c)->setFinishLock(current->getTID(), lockID);
+                    Thread::toKernel();
+                    *((uint64_t*)d) = current->getWaitForPIDResult();
+                }
                 return;
             case 0x0C:
                 *((uint64_t*)c) = (uint64_t) lastProcess->getArgumentPointer();
@@ -145,13 +149,13 @@ namespace Kernel {
         }
     }
 
-    void onATASystemCall(uint64_t b, uint64_t c, uint64_t d) {
+    void onMassStorageSystemCall(uint64_t b, uint64_t c, uint64_t d) {
         switch (b) {
         case 1:
-            *((uint64_t*)c) = ATA::getDeviceCount();
+            *((uint64_t*)c) = Device::getDeviceCount();
             return;
         case 2:
-            *((uint64_t*)c) = ATA::getSystemDevice();
+            *((uint64_t*)c) = Device::getSystemDevice();
             return;
         default:
             return;
@@ -184,8 +188,8 @@ namespace Kernel {
     }
 
     void onEXT4Syscall(uint64_t b, uint64_t c, uint64_t d) {
-        ATA::Device* device = ATA::getDevice(c);
-        EXT4 ext(*device, 0);
+        Device* device = Device::getDevice(c);
+        EXT4 ext(device, 0);
         switch (b) {
         case 1: {
             struct InodeOfPathRequest{
@@ -263,7 +267,7 @@ namespace Kernel {
                 onProcessSystemCall(b, c, d);
                 break;
             case 2:
-                onATASystemCall(b, c, d);
+                onMassStorageSystemCall(b, c, d);
                 break;
             case 3:
                 onBasicIOCall(b, c, d);
@@ -464,13 +468,18 @@ namespace Kernel {
     Thread::~Thread() {
     }
 
-    Thread::Thread(MemoryPage stack[stackPageCount], uint64_t currentCodeAddress, uint64_t pid) {
+    static uint64_t nextTid;
+
+    Thread::Thread(MemoryPage stack[stackPageCount], uint64_t currentCodeAddress, uint64_t pid, bool debugOnStart) {
+        Thread::debugOnStart = debugOnStart;
         for(uint8_t i = 0; i < stackPageCount; ++i) {
             new(Thread::stack + i)MemoryPage((MemoryPage&&) stack[i]);
         }
         Thread::stackAddress = stack[stackPageCount-1].getVirtualAddress() + pageSize - 1;
         Thread::currentCodeAddress = currentCodeAddress;
         Thread::pid = pid;
+        Thread::tid = ++nextTid;
+        memset(Thread::locks, 0, 32);
     }
 
     void Thread::setWaiting(uint64_t microseconds) {
@@ -494,6 +503,11 @@ namespace Kernel {
     void Thread::toProcess() {
         current = this;
         // gcc asm shit is stupid
+        if(debugOnStart) {
+            debugOnStart = false;
+            KTODO("process debugging");
+            Debug::setBreakpoint(3, currentCodeAddress, Debug::Condition::Execute, [](){kout << "Stuff\n"; return false;});
+        }
         asm(R"(
     mov %0, %%rax
     mov %1, %%rdx

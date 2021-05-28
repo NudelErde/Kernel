@@ -90,7 +90,7 @@ struct ProgramEntry {
 
 static_assert(sizeof(ProgramEntry) == 56);
 
-uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint64_t parentPid) {
+uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint64_t parentPid, bool loadWithDebug) {
     uint64_t inodeNum = ext.findFileINode(str);
     if(!inodeNum) {
         return false;
@@ -220,7 +220,7 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
     ++argsSize;
 
     Process proc(programPages, count, MemoryManager(false, highestAddress + ((2 + 8/*stack*/) * pageSize), 1Gi / pageSize), highestAddress + (2 + 8 + 1) * pageSize + 1Gi /*shared pages after heap*/, parentPid);
-    Thread thread(stack, header.entryPoint, proc.getPID());
+    Thread thread(stack, header.entryPoint, proc.getPID(), loadWithDebug);
     char* argumentOnHeap = (char*)proc.getHeap().malloc(argsSize);
 
     char buffer[128];
@@ -246,7 +246,6 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
         copyIndex += copyCount; // increment buffer index
     }
     proc.setArgumentPointer(argumentOnHeap);
-
     Scheduler::addThread((Thread&&) thread);
     Scheduler::addProcess((Process&&) proc);
 

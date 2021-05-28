@@ -77,6 +77,22 @@ Kernel::KernelOut& operator<<(Kernel::KernelOut& out, Kernel::Hex n) {
     printBase(out, n.hex, 16, n.digits);
     return out;
 }
+Kernel::KernelOut& operator<<(Kernel::KernelOut& out, Kernel::BitList n) {
+    uint64_t num = n.bits;
+    out << '[';
+    bool first = true;
+    for(uint64_t i = 0; num; ++i, num>>=1) {
+        if(num & 0b1) {
+            if(!first) {
+                out << ", ";
+            }
+            first = false;
+            out << i;
+        }
+    }
+    out << ']';
+    return out;
+}
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, Kernel::Bin n) {
     printBase(out, n.bin, 2, n.digits);
     return out;

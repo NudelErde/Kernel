@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IDE.hpp"
+#include "MassStorage.hpp"
 
 namespace Kernel {
     struct Partition{
@@ -10,7 +10,7 @@ namespace Kernel {
         uint8_t type;
     };
     
-    void createMBR(ATA::Device&);
-    void setPartition(ATA::Device& device, uint8_t partitionID, uint64_t start, uint64_t end, uint8_t type, bool bootable);
-    Partition getPartition(ATA::Device& device, uint8_t partitionID);
+    void createMBR(Device&);
+    void setPartition(Device& device, uint8_t partitionID, uint64_t start, uint64_t end, uint8_t type, bool bootable);
+    Partition getPartition(Device& device, uint8_t partitionID);
 }

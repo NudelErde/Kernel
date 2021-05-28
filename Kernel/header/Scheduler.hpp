@@ -17,6 +17,7 @@ public:
     static uint64_t getCurrentRelativeTime();
 
     static Process* getProcessById(uint64_t pid);
+    static Thread* getThreadById(uint64_t tid);
 };
 
 }

@@ -1,8 +1,6 @@
 #include "stdint.h"
 #include "setup.hpp"
 
-extern int main();
-
 void syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
     asm volatile(R"(
         mov %0, %%rax
@@ -31,17 +29,19 @@ uint64_t getpid() {
   return pid;
 }
 
-uint64_t createProcess(uint64_t device, const char* path, const char* argumentsArray) {
+uint64_t createProcess(uint64_t device, const char* path, const char* argumentsArray, bool withDebug) {
   struct SpawnRequest{
     uint64_t deviceID;
     const char* path;
     const char* argumentsArray;
     uint64_t pid;
+    bool withDebug;
   };
   SpawnRequest request;
   request.deviceID = device;
   request.path = path;
   request.argumentsArray = argumentsArray;
+  request.withDebug = withDebug;
   syscall(1, 0x03, (uint64_t)&request, 0);
   return request.pid;
 }
@@ -223,70 +223,49 @@ uint64_t getDirectoryEntriesOfINode(uint64_t device, uint64_t inode, uint64_t ma
   return request.count;
 }
 
-asm(R"(
-callMain:
-        push    %rbp
-        mov     %rsp, %rbp
-        sub     $16, %rsp
-        mov     %rbx, -8(%rbp)
+int countArgc(const char* args) {
+  int argc = 0;
+  if(args == 0 || args[0] == 0) {
+    argc = 0;
+  } else {
+    while(true) {
+      if(args[0] == 0)
+        ++argc;
+      if(args[0] == 0 && args[1] == 0)
+        break;
+      
+      ++args;
+    }
+  }
+  return argc;
+}
 
-        mov     %rdi, %rax
+const char** buildArgv(int argc, const char* args) {
+  const char** argv = (const char**)malloc(sizeof(uintptr_t) * (argc + 1));
+  argv[argc] = 0;
+  if(argc > 0) {
+    uint64_t index = 0;
+    do {
+      argv[index] = args;
+      ++index;
+      for(;*args; ++args); // to end of string
+      ++args; // start of next string
+    } while(*args);
+  }
+  return argv;
+}
 
-        mov     %rsp, %rdx
-        mov     $0, %rdi
-        
-        cmpb    $0, (%rax)
-        je      callMain.preCall
-        push    %rax
-        jmp     callMain.loop
-
-callMain.preLoop:
-        addq   $1, %rax
-callMain.loop:
-        cmpb    $0, (%rax)
-        jne     callMain.preLoop
-        
-        add     $1, %rdi
-        mov     %rax, %rbx
-        add     $1, %rbx
-        push    %rbx
-
-        cmpb    $0, 1(%rax)
-        jne     callMain.preLoop
-
-callMain.preCall:
-        movq    $0, (%rsp)
-
-        mov     %rsp, %rsi
-        mov     %rsp, %rax
-        
-        cmpq    %rdx, %rax
-        ja      callMain.call
-callMain.reverse:
-        movq    (%rdx), %rbx
-        xchg    (%rax), %rbx
-        mov     %rbx, (%rdx)
-        addq    $8, %rax
-        subq    $8, %rdx
-        cmpq    %rdx, %rax
-        jbe     callMain.reverse
-
-callMain.call:
-        addq    $8, %rsi
-        call    main
-
-        mov     -8(%rbp), %rbx
-        leave
-        ret
-)");
-
-extern "C" int callMain(const char* args);
+extern "C" int main(int argc, const char** argv);
 
 extern "C" {
 
 void __start() {
   const char* args = getArguments();
-  int retValue = callMain(args);
+  int argc = countArgc(args);
+  const char** argv = buildArgv(argc, args);
+
+  int retValue = main(argc, argv);
+
   exit(retValue);
   asm("int $0x81");
 }

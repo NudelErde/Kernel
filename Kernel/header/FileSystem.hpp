@@ -1,8 +1,8 @@
 #pragma once
 
 #include "stdint.h"
-#include "IDE.hpp"
 #include "Partition.hpp"
+#include "MassStorage.hpp"
 
 namespace Kernel {
 
@@ -355,7 +355,7 @@ public:
     };
 
     EXT4() = default;
-    EXT4(ATA::Device& device, uint8_t partition);
+    EXT4(Device* device, uint8_t partition);
     ~EXT4();
     EXT4(const EXT4&) = delete;
     EXT4& operator=(const EXT4&) = delete;
@@ -403,7 +403,7 @@ private:
     bool travelExtentTree(const uint8_t* extentPtr, uint64_t sector, void(*callback)(void*, uint64_t), void* self);
 
     SuperBlock sb;
-    ATA::Device device;
+    Device* device;
     uint8_t partitionID;
     Partition partition;
     SuperBlock* superBlock;
