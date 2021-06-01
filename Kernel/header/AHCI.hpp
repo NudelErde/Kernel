@@ -8,6 +8,8 @@ namespace Kernel {
 class AHCI{
 public:
     
+    inline explicit AHCI(PCI::BAR& bar): ABAR(bar){}
+
     struct CommandSlot;
     struct Port;
     struct PrdtEntry;
@@ -51,13 +53,11 @@ public:
     void setup();
     void reset();
     void tryDevice(uint8_t device);
-    static void openController(uint8_t bus, uint8_t device, uint8_t func, const PCICommonHeader& header);
+    static void openController(PCI* device, const PCICommonHeader& header);
 
 private:
-    uint8_t bus;
-    uint8_t device;
-    uint8_t func;
-    volatile uint32_t* ABAR;
+    PCI* dev;
+    PCI::BAR& ABAR;
     uint32_t capabilities;
     uint32_t capabilities2;
     uint32_t portsAvailable;

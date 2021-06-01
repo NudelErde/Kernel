@@ -229,35 +229,7 @@ static uint8_t* allocateReceivedFIS() {
     return result;
 }
 
-static bool configInterrupt(uint8_t bus, uint8_t device, uint8_t func, const PCICommonHeader& header, SharedInterrupt** interrupt) {
-    if(!(header.status & (0b1 << 4)))
-        return false;
-    uint8_t ptr = (uint8_t)PCI::configReadWord(bus, device, func, 0x34) & ~0b11;
-    while(ptr) {
-        uint32_t capaDWord = PCI::configReadWord(bus, device, func, ptr) & 0xFFFF;
-        
-        uint8_t capability = (uint8_t)(capaDWord & 0xFF);
-        if(capability == 0x05) {
-            // setup msi
-            *interrupt = SharedInterrupt::findInterrupt();
-            uint16_t data = (*interrupt)->getVector() & 0xFF;
-            uint64_t address = (0xFEE00000 | ((*interrupt)->getProcessor() << 12));
-            PCI::configWriteWord(bus, device, func, ptr + 0x00, capaDWord | (0b1 << 23));
-            PCI::configWriteWord(bus, device, func, ptr + 0x04, (uint32_t)address);
-            PCI::configWriteWord(bus, device, func, ptr + 0x08, (uint32_t)(address >> 32));
-
-            uint32_t currentData = PCI::configReadWord(bus, device, func, ptr + 0x08) & 0xFFFF0000;
-            PCI::configWriteWord(bus, device, func, ptr + 0x0C, data | currentData);
-
-            PCI::configWriteWord(bus, device, func, ptr + 0x00, capaDWord | (0b1 << 23) | (0b1 << 16));
-            return true;
-        }
-        ptr = (uint8_t)((capaDWord >> 8) & 0xFF);
-    }
-    return false;
-}
-
-void onSharedInterrupt(void* ptr) {
+static void onSharedInterrupt(void* ptr) {
     AHCI* self = (AHCI*)ptr;
     self->onInterrupt();
 }
@@ -614,8 +586,9 @@ void AHCI::reset() {
 }
 
 void AHCI::tryDevice(uint8_t device) {
-    uint32_t baseAddress = ((uint32_t)(uint64_t)ABAR) + 0x100 + (0x80 * device);
-    uint32_t* DBAR = (uint32_t*)(uint64_t)baseAddress;
+    if(ABAR.io) // io BAR not supported
+        return;
+    uint32_t* DBAR = (uint32_t*)(ABAR.virtualAddress + 0x100 + (0x80 * device));
     AHCIDevice* dev = new AHCIDevice(DBAR, this);
     devices[device] = dev;
     dev->setup();
@@ -647,25 +620,18 @@ void AHCI::setup() {
     }
 }
 
-void AHCI::openController(uint8_t bus, uint8_t device, uint8_t func, const PCICommonHeader& header) {
-    SharedInterrupt* interrupt;
-    if(!configInterrupt(bus, device, func, header, &interrupt))
+void AHCI::openController(PCI* dev, const PCICommonHeader& header) {
+    if((header.headerType & (~0x80)) != 0x00)
+        return;
+    if(!SharedInterrupt::configInterrupt(dev, header))
         return;
 
-    AHCI* controller = new AHCI();
-    controller->bus = bus;
-    controller->device = device;
-    controller->func = func;
-    interrupt->setData(controller);
-    interrupt->setInterruptFunction(onSharedInterrupt);
-    uint32_t BAR5 = PCI::configReadWord(bus, device, func, 0x24);
-    if(!(BAR5 < 1Gi)) {
-        MemoryPage page1(BAR5, true);
-        page1.mapTo(BAR5, true, false, true, true);
-        MemoryPage page2(BAR5 + pageSize, true);
-        page2.mapTo(BAR5 + pageSize, true, false, true, true);
-    }
-    controller->ABAR = (uint32_t*)(uint64_t)BAR5;
+    dev->writeConfig(0x04, dev->readConfig(0x04) | 0b111); // enable BAR
+
+    AHCI* controller = new AHCI(dev->bars[5]);
+    controller->dev = dev;
+    dev->interrupt->setData(controller);
+    dev->interrupt->setInterruptFunction(onSharedInterrupt);
     controller->setup();
 }
 

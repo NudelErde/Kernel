@@ -113,7 +113,7 @@ static void checkForDevices(Channel& channel) {
 }
 
 void openController(uint8_t bus, uint8_t device, uint8_t func, const PCICommonHeader& header) {
-    if(header.headerType != 0x00)
+    if((header.headerType & (~0x80)) != 0x00)
         return;
     uint32_t BAR0 = PCI::configReadWord(bus, device, func, 0x10);
     uint32_t BAR1 = PCI::configReadWord(bus, device, func, 0x14);

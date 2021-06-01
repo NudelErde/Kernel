@@ -1,5 +1,6 @@
 #pragma once
 #include "interrupt.hpp"
+#include "PCI.hpp"
 
 namespace Kernel{
 
@@ -19,6 +20,8 @@ public:
 
     static SharedInterrupt* findInterrupt();
     static void init();
+
+    static bool configInterrupt(PCI* dev, const PCICommonHeader& header);
 
     void check();
 };

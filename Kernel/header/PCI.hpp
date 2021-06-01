@@ -3,6 +3,8 @@
 #include "List.hpp"
 
 namespace Kernel{
+    class SharedInterrupt;
+
     constexpr uint64_t PCI_CONFIG_ADDRESS = 0xCF8;
     constexpr uint64_t PCI_CONFIG_DATA = 0xCFC;
 
@@ -38,18 +40,61 @@ namespace Kernel{
 
     class PCI {
     public:
+        struct BAR {
+            struct BARAccess{
+                BAR* bar;
+                uint64_t offset;
+
+                inline uint32_t operator=(uint32_t data) {
+                    bar->write32((uint32_t)offset, data);
+                    return data;
+                }
+
+                inline operator uint32_t() {
+                    return bar->read32((uint32_t)offset);
+                }
+            };
+            bool valid;
+            bool io;
+            uint64_t address;
+            uint64_t virtualAddress;
+            void setup(PCI* pci, uint8_t barID);
+            void write8(uint32_t offset, uint8_t data);
+            void write16(uint32_t offset, uint16_t data);
+            void write32(uint32_t offset, uint32_t data);
+            uint8_t read8(uint32_t offset);
+            uint16_t read16(uint32_t offset);
+            uint32_t read32(uint32_t offset);
+
+            inline BARAccess operator[](uint64_t index) {
+                return {this, index * 4};
+            }
+
+        };
+        void writeConfig(uint32_t offset, uint32_t data);
+        uint32_t readConfig(uint32_t offset);
+
+        uint8_t selfTest();
+
+        uint8_t bus;
+        uint8_t device;
+        uint8_t function;
+        SharedInterrupt* interrupt;
+        BAR bars[6];
+    public:
         static uint32_t configReadWord(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset);
         static void configWriteWord(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset, uint32_t data);
         static void readCommonHeader(PCICommonHeader& header, uint8_t bus, uint8_t device, uint8_t function);
-        static void checkDevice(uint8_t bus, uint8_t device, LinkedList<PCIDeviceData>&);
-        static void checkFunction(uint8_t bus, uint8_t device, uint8_t function, const PCICommonHeader& header, LinkedList<PCIDeviceData>&);
-        static void checkBus(uint8_t bus, LinkedList<PCIDeviceData>&);
-        static LinkedList<PCIDeviceData> checkAllBuses();
-        static void writeBAR8(uint32_t BAR, uint32_t offset, uint8_t data);
-        static void writeBAR16(uint32_t BAR, uint32_t offset, uint16_t data);
-        static void writeBAR32(uint32_t BAR, uint32_t offset, uint32_t data);
-        static uint8_t readBAR8(uint32_t BAR, uint32_t offset);
-        static uint16_t readBAR16(uint32_t BAR, uint32_t offset);
-        static uint32_t readBAR32(uint32_t BAR, uint32_t offset);
+        inline static void readCommonHeader(PCICommonHeader &header, PCI *data) { readCommonHeader(header, data->bus, data->device, data->function); }
+        static void checkDevice(uint8_t bus, uint8_t device, LinkedList<PCI>&);
+        static void checkFunction(uint8_t bus, uint8_t device, uint8_t function, const PCICommonHeader& header, LinkedList<PCI>&);
+        static void checkBus(uint8_t bus, LinkedList<PCI>&);
+        static LinkedList<PCI> checkAllBuses();
+        static void writeBAR8(uint64_t BAR, uint32_t offset, uint8_t data);
+        static void writeBAR16(uint64_t BAR, uint32_t offset, uint16_t data);
+        static void writeBAR32(uint64_t BAR, uint32_t offset, uint32_t data);
+        static uint8_t readBAR8(uint64_t BAR, uint32_t offset);
+        static uint16_t readBAR16(uint64_t BAR, uint32_t offset);
+        static uint32_t readBAR32(uint64_t BAR, uint32_t offset);
     };
 }

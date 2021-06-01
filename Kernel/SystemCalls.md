@@ -18,9 +18,9 @@ syscall is interrupt `0x80` and has 4 64 bit arguments in registers `RAX` to `RD
    * `RBX == 0x11` = call inter process method, `RCX` = InterProcessMethodCallTargetDescriptor struct
    * `RBX == 0x12` = register inter process method, `RCX` = InterProcessMethodRegistration struct
    * `RBX == 0x13` = not implemented: remove inter process method, `RCX` = method id
- * `RAX == 2` = ATA device syscall
-   * `RBX == 1` = Get ATA device count, `RCX` = pointer to 64 bit result buffer
-   * `RBX == 2` = Get System ATA device, `RCX` = pointer to 64 bit result buffer
+ * `RAX == 2` = device syscall
+   * `RBX == 1` = Get device count, `RCX` = pointer to 64 bit result buffer
+   * `RBX == 2` = Get System device, `RCX` = pointer to 64 bit result buffer
  * `RAX == 3` = basic IO syscall
    * `RBX == 1` = write data, `RCX` = one data byte
    * `RBX == 2` = read data, `RCX` = pointer to 8 bit result buffer

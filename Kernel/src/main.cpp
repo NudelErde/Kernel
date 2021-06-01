@@ -39,28 +39,40 @@ USB* usb;
 
 extern "C" void __cxa_pure_virtual() { asm("int $32"); }
 
+void configDevice(const PCICommonHeader& header, PCI* dev) {
+    if((header.headerType & ~0x80) != 0x00)
+        return;
+    for(uint8_t i = 0; i < 6; ++i) {
+        dev->bars[i].setup(dev, i);
+    }
+}
+
 void loadPCI(bool withText) {
-    LinkedList<PCIDeviceData> pciDevices = PCI::checkAllBuses();
-    
+    LinkedList<PCI> pciDevices = PCI::checkAllBuses();
     bool cont = true;
-    if(withText) kout << "Unused pci devices: \n";
+    if(withText) kout << "PCI devices: \n";
     for(auto iter = pciDevices.getIterator(); iter.valid() && cont; cont = iter.next()) {
         auto d = iter.get();
         PCICommonHeader header;
-        PCI::readCommonHeader(header, d->bus, d->device, d->function);
+        PCI::readCommonHeader(header, d);
+
+        if(withText) kout << "Class: " << Hex(header.classCode, 2) << " Subclass: " << Hex(header.subclass, 2)  << " ProgIf: " << Hex(header.progIF, 2) << " Status: " << BitList(header.status) << '\n';
+        
+        configDevice(header, d);
+        if(d->selfTest() != 0) {
+            kout << "Invalid self test\n";
+            continue;
+        }
+        
         if(header.classCode == 0x01 && header.subclass == 0x01) {
-            if(withText) kout << "Found ATA controller\n";
             ATA::openController(d->bus, d->device, d->function, header);
         } else if(header.classCode == 0x01 && header.subclass == 0x06 && header.progIF == 0x01) {
-            if(withText) kout << "Found AHCI controller\n";
-            AHCI::openController(d->bus, d->device, d->function, header);
+            AHCI::openController(d, header);
         } else if(header.classCode == 0x0C && header.subclass == 0x03) {
-            if(withText) kout << "Found USB controller\n";
-            usb = USB::openController(d->bus, d->device, d->function, header);
+            usb = USB::openController(d, header);
         } else {
             if(header.classCode == 0x06)
                 continue; // skip bridge devices
-            if(withText) kout << "Class: " << Hex(header.classCode) << " Subclass: " << Hex(header.subclass)  << " ProgIf: " << Hex(header.progIF) << '\n';
         }
     }
 }
