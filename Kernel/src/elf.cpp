@@ -90,6 +90,8 @@ struct ProgramEntry {
 
 static_assert(sizeof(ProgramEntry) == 56);
 
+constexpr uint64_t tempMap = (100 * 1024Gi);
+
 uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint64_t parentPid, bool loadWithDebug) {
     uint64_t inodeNum = ext.findFileINode(str);
     if(!inodeNum) {
@@ -101,11 +103,16 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
     for(uint64_t i = 0; i < sizeof(header); ++i) {
         ((uint8_t*)&header)[i] = fi.get();
     }
-    if(header.magicNumber[0] != 0x7F || header.magicNumber[1] != 'E' || header.magicNumber[2] != 'L' || header.magicNumber[3] != 'F')
+    if(header.magicNumber[0] != 0x7F || header.magicNumber[1] != 'E' || header.magicNumber[2] != 'L' || header.magicNumber[3] != 'F') {
         return false; // not an elf file
-    
-    if(header.bitMode != 2 || header.endianness != 1 || header.type != 2 || header.instructionSet != 0x3E)
+    }
+
+    if(header.bitMode != 2 || header.endianness != 1 || header.type != 2 || header.instructionSet != 0x3E) {
         return false; // invalid elf file
+    }
+
+    // switch to kernel environment
+    getKernelMemoryManager().reload();
 
     fi.setNextAddress(header.programTableHeaderPosition);
     MemoryPage* programPages;
@@ -120,6 +127,7 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
         }
 
         if(entry.memoryOffset <= 1Gi) {
+            kout << "Invalid memory used\n";
             return false; // low memory is used by kernel
         }
 
@@ -145,6 +153,7 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
         }
 
         if(entry.memoryOffset <= 1Gi) {
+            kout << "Invalid memory used\n";
             return false; // low memory is used by kernel
         }
 
@@ -153,7 +162,7 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
             bool pageAlreadyExists = false;
 
             for(uint64_t iter = 0; iter < pagesIndex; ++iter) {
-                uint64_t start = programPages[iter].getVirtualAddress()-1024Gi;
+                uint64_t start = programPages[iter].getVirtualAddress()-tempMap;
                 if(entry.memoryOffset > start && entry.memoryOffset <= start+pageSize) {
                     pageAlreadyExists = true;
                     break;
@@ -165,21 +174,21 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
                 uint64_t base = entry.memoryOffset & ~(pageSize - 1);
                 new(programPages + pagesIndex)MemoryPage(PhysicalMemoryManagment::getFreeUserPage()); // in place construct
                 programPagesPermissions[pagesIndex] |= entry.flags;
-                programPages[pagesIndex++].mapTo(base + 1024Gi, true, true); // offset by 1TiB in virtual memory to avoid collision with stack
+                programPages[pagesIndex++].mapTo(base + tempMap, true, true); // offset by 1TiB in virtual memory to avoid collision with stack
             }
             k = pageSize - entry.memoryOffset % pageSize;
         }
         for(; k < entry.memorySize; k += pageSize) {
             new(programPages + pagesIndex)MemoryPage(PhysicalMemoryManagment::getFreeUserPage()); // in place construct
             programPagesPermissions[pagesIndex] |= entry.flags;
-            programPages[pagesIndex++].mapTo(k + entry.memoryOffset + 1024Gi, true, true); // offset by 1TiB in virtual memory to avoid collision with stack
+            programPages[pagesIndex++].mapTo(k + entry.memoryOffset + tempMap, true, true); // offset by 1TiB in virtual memory to avoid collision with stack
         }
         
         if(highestAddress < k + entry.memoryOffset) {
             highestAddress = k + entry.memoryOffset;
         }
         
-        k = entry.memoryOffset + 1024Gi;
+        k = entry.memoryOffset + tempMap;
         fi.setNextAddress(entry.fileOffset);
         for(uint64_t l = 0; l < entry.fileSize; ++l, ++k) {
             uint8_t data = fi.get();
@@ -195,15 +204,25 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
         bool pageWriteable = flag & 0x2;
         bool pageReadable = flag & 0x4;
         programPages[iter].unmap();
-        programPages[iter].softmap(programPages[iter].getVirtualAddress()-1024Gi, pageWriteable, true); // todo: set permission
+        programPages[iter].softmap(programPages[iter].getVirtualAddress()-tempMap, pageWriteable, true); // todo: set permission
     }
     delete[] programPagesPermissions;
-    MemoryPage stack[8];
-    for(uint8_t i = 0; i < 8; ++i) {
+
+    // build target stack
+    
+    uint64_t stackBase = 1024Gi - ((stackPageCount + 2) * pageSize);
+    MemoryPage stack[stackPageCount];
+    for(uint8_t i = 0; i < stackPageCount; ++i) {
         new(stack+i) MemoryPage(PhysicalMemoryManagment::getFreeUserPage());
-        stack[i].softmap(highestAddress + ((1 + i) * pageSize), true, true);
+        stack[i].softmap(stackBase + (i * pageSize), true, true);
     }
 
+    // build target heap
+    uint64_t heapSize = 1Gi;
+    uint64_t heapBase = highestAddress + pageSize;
+    MemoryManager targetHeap(false, heapBase, heapSize / pageSize);
+
+    // switch to source environment
     if(Thread::isInProgram()) {
         Process::getLastLoadedProcess()->reload();
         Thread::getCurrent()->reload();
@@ -219,7 +238,8 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
     }
     ++argsSize;
 
-    Process proc(programPages, count, MemoryManager(false, highestAddress + ((2 + 8/*stack*/) * pageSize), 1Gi / pageSize), highestAddress + (2 + 8 + 1) * pageSize + 1Gi /*shared pages after heap*/, parentPid);
+    // switch to target environment
+    Process proc(programPages, count, (MemoryManager&&)targetHeap, heapBase + 2Gi /*shared pages after heap*/, parentPid);
     Thread thread(stack, header.entryPoint, proc.getPID(), loadWithDebug);
     char* argumentOnHeap = (char*)proc.getHeap().malloc(argsSize);
 

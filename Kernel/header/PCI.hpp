@@ -71,6 +71,7 @@ namespace Kernel{
             }
 
         };
+        void load();
         void writeConfig(uint32_t offset, uint32_t data);
         uint32_t readConfig(uint32_t offset);
 

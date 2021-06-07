@@ -487,6 +487,7 @@ void AHCI::AHCIDevice::read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t*
         memcpy(dest, tmpBuffer, sectorCount * 512);
         return;
     }
+    controller->dev->load();
     uint32_t slotID = findSlot();
     if(slotID >= 32) {
         flush();
@@ -498,7 +499,21 @@ void AHCI::AHCIDevice::read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t*
     
     uint64_t size = sectorCount * 512;
     uint64_t lastSize = size;
+    
+    //if nothing happens fucking die
+    uint8_t i = 0;
+    uint64_t prevSize = size;
+    
     while(size) {
+        //if nothing happens fucking die
+        if(prevSize <= size) {
+            ++i;
+            if(i == 8) {
+                kout << "Big sad " __FILE__ ":" << (uint64_t)__LINE__ << '\n';
+            }
+        }
+        prevSize = size;
+
         slot->prdTableLength = table->createPrdt(dest, size);
         if((uint8_t)slot->prdTableLength > prdtEntryCount) {
             kout << "Buffer not word aligned\n";
@@ -509,7 +524,7 @@ void AHCI::AHCIDevice::read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t*
         uint64_t usedSectors = sizeDiff / 512;
         writeH2DCommand(slotID, 0x25, sectorIndex, usedSectors);
         sectorIndex += usedSectors;
-
+        
         if(!waitForFinish()) {
             kout << "Error while reading\n";
             return;
@@ -529,6 +544,7 @@ void AHCI::AHCIDevice::write(uint64_t sectorIndex, uint64_t sectorCount, uint8_t
         write(sectorIndex, sectorCount, tmpBuffer);
         return;
     }
+    controller->dev->load();
     uint32_t slotID = findSlot();
     if(slotID >= 32) {
         flush();
@@ -564,7 +580,15 @@ void AHCI::AHCIDevice::write(uint64_t sectorIndex, uint64_t sectorCount, uint8_t
     }
 }
 void AHCI::AHCIDevice::flush() {
-    while(port->commandIssue && !(port->taskFileData & 0b1));
+    controller->dev->load();
+    uint64_t i = 0;
+    while(port->commandIssue && !(port->taskFileData & 0b1)) {
+        ++i;
+        if(i >= 1000000000) {
+            kout << "Big sad " __FILE__ ":" << (uint64_t)__LINE__ << '\n';
+            return;
+        }
+    }
 }
 
 void AHCI::onInterrupt() {

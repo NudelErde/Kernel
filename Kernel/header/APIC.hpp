@@ -13,7 +13,7 @@ public:
 
     static void endInterrupt();
 
-    static void interruptIn(uint64_t microseconds, void(*callback)());
+    static void interruptIn(uint64_t microseconds, void(*callback)(void(*)()));
     static uint64_t getTimeLeft();
 
     inline static uint64_t localAPICAddress;

@@ -117,15 +117,14 @@ void LocalAPIC::setupSleep() {
     *(uint32_t volatile*)(localAPICAddress + 0x380) = 0x0; // set count to 0x0
 }
 
-static void(*localCallback)(); // todo move in cpu specific memory
-void LocalAPIC::interruptIn(uint64_t microseconds, void(*callback)()) {
+static void(*localCallback)(void(*)()); // todo move in cpu specific memory
+void LocalAPIC::interruptIn(uint64_t microseconds, void(*callback)(void(*)())) {
     uint32_t ticks = (uint64_t)ticksIn100ms * microseconds / 100000;
     localCallback = callback;
 
     Interrupt::setHandler(0x90, [](const Interrupt&){
         if(localCallback)
-            localCallback();
-        LocalAPIC::endInterrupt();
+            localCallback(LocalAPIC::endInterrupt);
     }, 0); // Interrupt handler = ignore
 
     *(uint32_t volatile*)(localAPICAddress + 0x3E0) = 0x3; // divider = 16

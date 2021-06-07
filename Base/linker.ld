@@ -4,7 +4,6 @@ ENTRY(__start)
 SECTIONS {
     . = 1536M;
     
-    
     .text : ALIGN(0x1000)
     {
         *(.text)

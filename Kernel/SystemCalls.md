@@ -29,3 +29,4 @@ syscall is interrupt `0x80` and has 4 64 bit arguments in registers `RAX` to `RD
    * `RBX == 2` = get sector of inode, `RCX` = device, `RDX` = pointer to sectorOfInodeRequest struct
    * `RBX == 3` = get flags of inode, `RCX` = device, `RDX` = pointer to flagsOfInodeRequest struct
    * `RBX == 4` = get directory entry, `RCX` = device, `RDX` = pointer to directoryEntriesRequest struct
+   * `RBX == 5` = get size of file, `RCX` = device, `RDX` = pointer to fileSizeRequest struct

@@ -101,6 +101,7 @@ static bool tryHandle(const Interrupt& i, uint8_t number) {
 
 void onBreakpoint(const Interrupt& i) {
     if(!tryHandle(i, 5)) {
+        kout << "On int3 breakpoint\n";
         Debug::printDebugInfo(i.stackFrame);
         ((uint64_t*)i.stackFrame)[2] |= 0x100;
     }
@@ -189,12 +190,16 @@ void Debug::setBreakpoint(uint8_t debugNum, uint64_t address, Condition c, bool(
     asm("mov %0, %%dr7":"=a"(dr7)::);
 }
 
-uint64_t readHex() {
+uint8_t readChar() {
     Serial s(0x3F8);
+    while (s.inputBufferEmpty());
+    return s.read();
+}
+
+uint64_t readHex() {
     uint64_t num = 0;
     while(true) {
-        while (s.inputBufferEmpty());
-        uint8_t ch = s.read();
+        uint8_t ch = readChar();
         const char *digits = "0123456789ABCDEF";
         if(ch >= 'a' && ch <= 'f') {
             ch += 'A' - 'a';
@@ -210,6 +215,70 @@ uint64_t readHex() {
             break;
     }
     return num;
+}
+
+static void readMemory() {
+    kout << "Address: 0x";
+    uint64_t address = readHex();
+    kout << "\nSize: 0x";
+    uint64_t size = readHex();
+    kout << "\nData: ";
+    switch (size) {
+        case 1:
+            kout << "0x" << Hex(*(uint8_t*)address, 2) << '\n';
+            break;
+        case 2:
+            kout << "0x" << Hex(*(uint16_t*)address, 4) << '\n';
+            break;
+        case 4:
+            kout << "0x" << Hex(*(uint32_t*)address, 8) << '\n';
+            break;
+        case 8:
+            kout << "0x" << Hex(*(uint64_t*)address, 16) << '\n';
+            break;
+        default:
+            kout << '\n' <<HexDump((uint8_t*)address, size) << '\n';
+            break;
+    }
+}
+
+static void stackRead(uint64_t base, uint64_t instruction) {
+    while(true) {
+        kout << "Base: 0x" << Hex(base) << " Instr: 0x" << Hex(instruction) << '\n';
+        kout << "Stack variable (v), Down (d), Up (u)";
+        uint8_t ch = readChar();
+        kout << '\n';
+        if(ch == 'd' || ch == 'D') {
+            uint64_t rbp = *((uint64_t*)base);
+            uint64_t rip = *((uint64_t*)(base + 8));
+            stackRead(rbp, rip);
+        }
+        if(ch == 'v' || ch == 'V') {
+            kout << "Offset: 0x";
+            uint64_t offset = readHex();
+            kout << '\n';
+            kout << "Value: 0x " << Hex(*((uint64_t*)(base - offset))) << '\n';
+        }
+        if(ch == 'u' || ch == 'U') {
+            return;
+        }
+    }
+}
+
+static void interactive(uint64_t base, uint64_t instruction) {
+    while(true) {
+        while(true) {
+            kout << "Memory (m), Stack (s)";
+            uint8_t ch = readChar();
+            kout << '\n';
+            if(ch == 'm' || ch == 'M') {
+                readMemory();
+            }
+            if(ch == 's' || ch == 'S') {
+                stackRead(base, instruction);
+            }
+        }
+    }
 }
 
 void Debug::printDebugInfo(void* stackPointer) {
@@ -250,30 +319,7 @@ void Debug::printDebugInfo(void* stackPointer) {
         flags >>= 0b1;
     }
     kout << '\n';
-    while(true) {
-        kout << "Address: 0x";
-        uint64_t address = readHex();
-        kout << "\nSize: 0x";
-        uint64_t size = readHex();
-        kout << "\nData: ";
-        switch (size) {
-            case 1:
-                kout << "0x" << Hex(*(uint8_t*)address, 2) << '\n';
-                break;
-            case 2:
-                kout << "0x" << Hex(*(uint16_t*)address, 4) << '\n';
-                break;
-            case 4:
-                kout << "0x" << Hex(*(uint32_t*)address, 8) << '\n';
-                break;
-            case 8:
-                kout << "0x" << Hex(*(uint64_t*)address, 16) << '\n';
-                break;
-            default:
-                kout << '\n' <<HexDump((uint8_t*)address, size) << '\n';
-                break;
-        }
-    }
+    interactive(rbp, rip);
 }
 
 // crack stuff; do not use pls

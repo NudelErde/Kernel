@@ -10,10 +10,11 @@
 namespace Kernel{
 
 static uint64_t lastBarVirtualAddress;
+constexpr uint64_t barVirtualAddressStart = 10 * 1024Gi;
 
 void PCI::BAR::setup(PCI* pci, uint8_t barID) {
     if(lastBarVirtualAddress == 0) {
-        lastBarVirtualAddress = 1024Gi;
+        lastBarVirtualAddress = barVirtualAddressStart;
     }
     uint32_t bar = pci->readConfig(0x10 + barID * 4);
     if(bar == 0) {
@@ -116,6 +117,21 @@ uint32_t PCI::BAR::read32(uint32_t offset) {
         uint32_t value = *(uint32_t*)(virtualAddress + offset);
         return value;
     }
+}
+
+void PCI::load() {
+    // check memory mapping
+    for(uint8_t i = 0; i < 6; ++i) {
+        if(bars[i].valid) {
+            if(!bars[i].io && MemoryPage::getPhysicalAddressFromVirtual(bars[i].virtualAddress) != bars[i].address) {
+                kout << "\nBAR " << Hex(i) << " in " << Hex(bus) << ':' << Hex(device) << ':' << Hex(function) << " has invalid memory mapping:\n";
+                kout << "Physical: 0x" << Hex(bars[i].address) << " Mapped: 0x" << Hex(MemoryPage::getPhysicalAddressFromVirtual(bars[i].virtualAddress)) << '\n';
+                kout << "Virtual: 0x" << Hex(bars[i].virtualAddress) << '\n';
+                asm("int3");
+            }
+        }
+    }
+    writeConfig(0x04, readConfig(0x04) | 0b111); // enable BAR
 }
 
 uint8_t PCI::selfTest() {

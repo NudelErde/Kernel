@@ -66,8 +66,12 @@ namespace Kernel {
                 lastProcess->unuseSharedMemoryPage(c);
                 return;
             case 0x0B: {
+                    Process* proc = Scheduler::getProcessById(c);
+                    if(proc == 0) {
+                        return;
+                    } // process no longer exists 
                     uint8_t lockID = current->makeLock();
-                    Scheduler::getProcessById(c)->setFinishLock(current->getTID(), lockID);
+                    proc->setFinishLock(current->getTID(), lockID);
                     Thread::toKernel();
                     *((uint64_t*)d) = current->getWaitForPIDResult();
                 }
@@ -222,8 +226,7 @@ namespace Kernel {
             req->flags = inodeObj.i_mode;
         }
             return;
-        case 4: 
-        {
+        case 4: {
             struct DirectoryEntriesRequest {
                 struct DirectoryEntry {
                     uint64_t inode;
@@ -254,6 +257,15 @@ namespace Kernel {
                 ++request->count;
                 return false;
             }, (void*)req);
+        }
+            return;
+        case 5: {
+            struct FileSizeRequest {
+                uint64_t inode;
+                uint64_t sizeInBytes;
+            } __attribute__((packed));
+            FileSizeRequest* req = (FileSizeRequest*)d;
+            req->sizeInBytes = ext.getFileSize(ext.getINode(req->inode));
         }
             return;
         default:

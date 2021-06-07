@@ -1,7 +1,7 @@
 #include "stdint.h"
 #include "setup.hpp"
 
-void syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
+inline void syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
     asm volatile(R"(
         mov %0, %%rax
         mov %1, %%rbx
@@ -221,6 +221,18 @@ uint64_t getDirectoryEntriesOfINode(uint64_t device, uint64_t inode, uint64_t ma
   request.entries = entries;
   syscall(4, 4, device, (uint64_t)&request);
   return request.count;
+}
+
+uint64_t getFileSize(uint64_t device, uint64_t inode) {
+  struct FileSizeRequest {
+    uint64_t inode;
+    uint64_t sizeInBytes;
+  } __attribute__((packed));
+  FileSizeRequest request;
+  request.inode = inode;
+  request.sizeInBytes = 0;
+  syscall(4, 5, device, (uint64_t)&request);
+  return request.sizeInBytes;
 }
 
 int countArgc(const char* args) {

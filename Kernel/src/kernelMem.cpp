@@ -19,6 +19,7 @@ void onPageFault(const Interrupt& i) {
     :
     :);
     kout << "Page fault at 0x" << Hex(mem) << '\n';
+    kout << "Error code: " << BitList(i.errorCode) << '\n';
     Debug::printDebugInfo(i.stackFrame);
 
     asm("hlt");
@@ -26,7 +27,7 @@ void onPageFault(const Interrupt& i) {
 
 void initKernelDynamicMemory() {
     //register page fault handler
-    Interrupt::setHandler(14, onPageFault);
+    Interrupt::setHandler(14, onPageFault, 1);
 
     ptr = new ((void*)buffer) MemoryManager(false, 0x80000000, 100);
     ptr->reload(); // set as active heap

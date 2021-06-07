@@ -64,3 +64,4 @@ uint64_t getINodeOfPath(uint64_t device, const char* path);
 bool getSectorOfINode(uint64_t device, uint64_t inode, uint64_t sector, uint8_t* buffer);
 uint64_t getFlagsOfINode(uint64_t device, uint64_t inode);
 uint64_t getDirectoryEntriesOfINode(uint64_t device, uint64_t inode, uint64_t maxCount, DirectoryEntry* entries);
+uint64_t getFileSize(uint64_t device, uint64_t inode);
