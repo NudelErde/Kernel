@@ -2,7 +2,7 @@
 #include "KernelOut.hpp"
 #include "process.hpp"
 
-namespace Kernel{
+namespace Kernel {
 
 MemoryManager* activeHeap;
 
@@ -10,7 +10,7 @@ MemoryManager* MemoryManager::getActiveHeap() {
     return activeHeap;
 }
 
-MemoryManager::MemoryManager(bool inKernel, uint64_t start, uint64_t pageCount): inKernel(inKernel) {
+MemoryManager::MemoryManager(bool inKernel, uint64_t start, uint64_t pageCount) : inKernel(inKernel) {
     firstMemoryAvailabilityNode.next = nullptr;
     firstMemoryAvailabilityNode.prev = nullptr;
     firstMemoryAvailabilityNode.startPagesBaseAddress = start & ~0xFFFu;
@@ -29,34 +29,34 @@ MemoryManager::MemoryManager(bool inKernel, uint64_t start, uint64_t pageCount):
     firstPageNode.objectCount = 0;
     lastPageNode = &firstPageNode;
 
-    firstPageBuffer = (PageBuffer*)malloc(sizeof(PageBuffer));
+    firstPageBuffer = (PageBuffer*) malloc(sizeof(PageBuffer));
     firstPageBuffer->next = nullptr;
     firstPageBuffer->prev = nullptr;
-    for(uint8_t i = 0; i < 16; ++i) {
+    for (uint8_t i = 0; i < 16; ++i) {
         firstPageBuffer->buffer[i].exists = false;
     }
     valid = true;
 }
 
 MemoryManager::~MemoryManager() {
-    if(!valid)
+    if (!valid)
         return;
-    for(PageListNode* node = lastPageNode; node; node = node -> prev) {
+    for (PageListNode* node = lastPageNode; node; node = node->prev) {
         node->page.unmap();
     }
 }
 
 void MemoryManager::reload() {
     activeHeap = this;
-    for(PageListNode* ptr = &firstPageNode; ptr; ptr = ptr->next) {
+    for (PageListNode* ptr = &firstPageNode; ptr; ptr = ptr->next) {
         ptr->page.remap();
     }
 }
 
 MemoryManager::MemoryManager(MemoryManager&& other) noexcept {
-    firstPageNode = (PageListNode&&)other.firstPageNode;
+    firstPageNode = (PageListNode &&) other.firstPageNode;
 
-    if(other.lastPageNode == &other.firstPageNode) { // if pointer in local => recalc pointer
+    if (other.lastPageNode == &other.firstPageNode) {// if pointer in local => recalc pointer
         lastPageNode = &firstPageNode;
     } else {
         lastPageNode = other.lastPageNode;
@@ -69,15 +69,15 @@ MemoryManager::MemoryManager(MemoryManager&& other) noexcept {
     other.valid = false;
 }
 MemoryManager& MemoryManager::operator=(MemoryManager&& other) noexcept {
-    if(valid) {
-        for(PageListNode* node = lastPageNode; node; node = node -> prev) {
+    if (valid) {
+        for (PageListNode* node = lastPageNode; node; node = node->prev) {
             node->page.unmap();
         }
     }
-    
-    firstPageNode = (PageListNode&&)other.firstPageNode;
 
-    if(other.lastPageNode == &other.firstPageNode) { // if pointer in local => recalc pointer
+    firstPageNode = (PageListNode &&) other.firstPageNode;
+
+    if (other.lastPageNode == &other.firstPageNode) {// if pointer in local => recalc pointer
         lastPageNode = &firstPageNode;
     } else {
         lastPageNode = other.lastPageNode;
@@ -101,8 +101,8 @@ uint64_t MemoryManager::getFreePhysicalPage() {
 
 void* MemoryManager::malloc(uint64_t size) {
     uint64_t realSize = sizeof(PointerData) + size;
-    for(PageListNode* node = &firstPageNode; node; node = node->next) {
-        if(node->remainingSizeInPhysical >= realSize) { // pack in existing node
+    for (PageListNode* node = &firstPageNode; node; node = node->next) {
+        if (node->remainingSizeInPhysical >= realSize) {// pack in existing node
             uint64_t baseAddress = node->page.getVirtualAddress();
             baseAddress += pageSize;
             baseAddress -= node->remainingSizeInPhysical;
@@ -117,47 +117,47 @@ void* MemoryManager::malloc(uint64_t size) {
 
             node->remainingSizeInPhysical -= realSize;
 
-            return (void*)baseAddress;
+            return (void*) baseAddress;
         }
     }
     uint64_t memoryPageCount = (realSize / pageSize) + 1;
     uint64_t virtualBaseAddress = findFreeVirtualPages(memoryPageCount);
     uint64_t returnAddress = virtualBaseAddress + sizeof(PointerData);
 
-    for(uint64_t index = 0; index < memoryPageCount; ++index) {
+    for (uint64_t index = 0; index < memoryPageCount; ++index) {
         appendPhysicalPage();
 
         lastPageNode->objectCount += 1;
-        if(memoryPageCount == index + 1) {
+        if (memoryPageCount == index + 1) {
             lastPageNode->remainingSizeInPhysical -= realSize % pageSize;
         } else {
             lastPageNode->remainingSizeInPhysical = 0;
         }
         lastPageNode->page.mapTo(virtualBaseAddress + pageSize * index, true, !inKernel);
 
-        if(index == 0) {
+        if (index == 0) {
             PointerData* ptrData = (PointerData*) virtualBaseAddress;
-            ptrData->node = lastPageNode; // in loop because of lastPageNode
+            ptrData->node = lastPageNode;// in loop because of lastPageNode
             ptrData->realSize = realSize;
             ptrData->pageCount = memoryPageCount;
         }
     }
-    return (void*)returnAddress;
+    return (void*) returnAddress;
 }
 
 uint64_t MemoryManager::findFreeVirtualPages(uint64_t count) {
-    for(VirtualMemoryAvailabilityNode* node = &firstMemoryAvailabilityNode; node; node = node->next) {
-        if(node->freePages >= count) {
+    for (VirtualMemoryAvailabilityNode* node = &firstMemoryAvailabilityNode; node; node = node->next) {
+        if (node->freePages >= count) {
             uint64_t offset = node->usedPages * pageSize;
             node->freePages -= count;
             node->usedPages += count;
 
             //check if mergeable with next
-            while((node->freePages == 0) && (node->next)) {
+            while ((node->freePages == 0) && (node->next)) {
                 //move next node in this
                 VirtualMemoryAvailabilityNode* next = node->next;
                 node->next = next->next;
-                if(node->next) {
+                if (node->next) {
                     node->next->prev = node;
                 }
                 node->freePages = next->freePages;
@@ -177,24 +177,24 @@ uint64_t MemoryManager::findFreeVirtualPages(uint64_t count) {
 void MemoryManager::removeVirtualPages(uint64_t base, uint64_t count) {
     base &= ~0xFFF;
     uint64_t endAddress = base + count * pageSize;
-    for(VirtualMemoryAvailabilityNode* node = &firstMemoryAvailabilityNode; node; node = node->next) {
+    for (VirtualMemoryAvailabilityNode* node = &firstMemoryAvailabilityNode; node; node = node->next) {
         uint64_t nodeEnd = node->startPagesBaseAddress + node->usedPages * pageSize;
-        if(endAddress == nodeEnd) { // remove at end of used section
+        if (endAddress == nodeEnd) {// remove at end of used section
             // *****_____
             // ***_______
             node->usedPages -= count;
             node->freePages += count;
             // check for merge with prev
-            if(node->usedPages == 0 && node->prev) {
+            if (node->usedPages == 0 && node->prev) {
                 // _______
                 node->prev->freePages += node->freePages;
                 //remove node
                 VirtualMemoryAvailabilityNode* next = node->next;
                 VirtualMemoryAvailabilityNode* prev = node->prev;
-                if(next) {
+                if (next) {
                     next->prev = prev;
                 }
-                if(prev) {
+                if (prev) {
                     prev->next = next;
                 }
                 node->next = nullptr;
@@ -202,20 +202,20 @@ void MemoryManager::removeVirtualPages(uint64_t base, uint64_t count) {
                 deallocVirtualPageInfo(node);
             }
             return;
-        } else if(base == node->startPagesBaseAddress && endAddress < nodeEnd && node->prev) {
-            // ++++ ********________ 
-            // ++++ __******________ 
-            // ++++ __ ******________ 
-            // ++++__ ******________ 
+        } else if (base == node->startPagesBaseAddress && endAddress < nodeEnd && node->prev) {
+            // ++++ ********________
+            // ++++ __******________
+            // ++++ __ ******________
+            // ++++__ ******________
             node->prev->freePages += count;
             node->usedPages -= count;
             node->startPagesBaseAddress += count * pageSize;
             return;
-        } else if(base >= node->startPagesBaseAddress && endAddress < nodeEnd) {
-            // ********________ 
-            // ***__***________ 
-            // ***__ ***________ 
-            // |     ***   __    |     ***   ________ 
+        } else if (base >= node->startPagesBaseAddress && endAddress < nodeEnd) {
+            // ********________
+            // ***__***________
+            // ***__ ***________
+            // |     ***   __    |     ***   ________
             // base1 used1 free1 base2 used2 free2
             uint64_t base1 = node->startPagesBaseAddress;
             uint64_t used1 = (base - node->startPagesBaseAddress) / pageSize;
@@ -241,7 +241,7 @@ void MemoryManager::removeVirtualPages(uint64_t base, uint64_t count) {
             newNode->prev = node;
 
             //links to newNode
-            if(node->next) {
+            if (node->next) {
                 node->next->prev = newNode;
             }
             node->next = newNode;
@@ -257,9 +257,9 @@ void MemoryManager::appendPhysicalPage() {
     bool done = false;
     uint8_t index;
     PageBuffer* buffer;
-    for(buffer = firstPageBuffer; buffer && !done; buffer = buffer->next) {
-        for(index = 0; index < 16; ++index) {
-            if(!buffer->buffer[index].exists) {
+    for (buffer = firstPageBuffer; buffer && !done; buffer = buffer->next) {
+        for (index = 0; index < 16; ++index) {
+            if (!buffer->buffer[index].exists) {
                 result = &buffer->buffer[index];
                 done = true;
                 break;
@@ -276,10 +276,10 @@ void MemoryManager::appendPhysicalPage() {
     result->page = MemoryPage(physicalPage);
     result->remainingSizeInPhysical = pageSize;
 
-    if(index == 14 && buffer->next == nullptr) {
+    if (index == 14 && buffer->next == nullptr) {
         //create next buffer
         PageListNode* fillPage = &(buffer->buffer[15]);
-        
+
         //init fillPage
         fillPage->buffer = buffer;
         fillPage->exists = true;
@@ -295,9 +295,9 @@ void MemoryManager::appendPhysicalPage() {
         lastPageNode->next = nullptr;
         lastPageNode = fillPage;
 
-        PageBuffer* nBuffer = (PageBuffer*)malloc(sizeof(PageBuffer));
-        
-        for(uint8_t i = 0; i < 16; ++i) {
+        PageBuffer* nBuffer = (PageBuffer*) malloc(sizeof(PageBuffer));
+
+        for (uint8_t i = 0; i < 16; ++i) {
             nBuffer->buffer[i].exists = false;
         }
 
@@ -317,21 +317,21 @@ void MemoryManager::removePhysicalPage(PageListNode* node) {
     node->exists = false;
     node->page.~MemoryPage();
 
-    if(&firstPageNode == node) {
-        return; // do not delete initial page
+    if (&firstPageNode == node) {
+        return;// do not delete initial page
     }
     PageBuffer* buffer = node->buffer;
-    for(uint8_t i = 0; i < 16; ++i) {
-        if(buffer->buffer[i].exists)
+    for (uint8_t i = 0; i < 16; ++i) {
+        if (buffer->buffer[i].exists)
             return;
     }
     PageBuffer* next = buffer->next;
     PageBuffer* prev = buffer->prev;
 
-    if(next) {
+    if (next) {
         next->prev = prev;
     }
-    if(prev) {
+    if (prev) {
         prev->next = next;
     }
     buffer->next = nullptr;
@@ -341,8 +341,8 @@ void MemoryManager::removePhysicalPage(PageListNode* node) {
 
 uint64_t i = 3;
 void MemoryManager::removeReferenceToPage(PageListNode* node) {
-    if(node == &firstPageNode) {
-        node->remainingSizeInPhysical == pageSize; // reuse init page
+    if (node == &firstPageNode) {
+        node->remainingSizeInPhysical == pageSize;// reuse init page
         return;
     }
 
@@ -351,59 +351,58 @@ void MemoryManager::removeReferenceToPage(PageListNode* node) {
     PageListNode* next = node->next;
     PageListNode* prev = node->prev;
 
-    if(node == lastPageNode) {
+    if (node == lastPageNode) {
         lastPageNode = node->prev;
     }
 
     node->next = nullptr;
     node->prev = nullptr;
-    if(next) {
+    if (next) {
         next->prev = prev;
     }
-    if(prev) {
+    if (prev) {
         prev->next = next;
     }
     removePhysicalPage(node);
 }
 
-void MemoryManager::free(void* ptr){
-    if(ptr == nullptr)
+void MemoryManager::free(void* ptr) {
+    if (ptr == nullptr)
         return;
-    PointerData* ptrData = (PointerData*)(((uint8_t*)(ptr)) - sizeof(PointerData));
-    if(!ptrData->node->exists) {
-        return; //invalid pointer
+    PointerData* ptrData = (PointerData*) (((uint8_t*) (ptr)) - sizeof(PointerData));
+    if (!ptrData->node->exists) {
+        return;//invalid pointer
     }
-    if(ptrData->pageCount == 1) {
+    if (ptrData->pageCount == 1) {
         --ptrData->node->objectCount;
-        if(ptrData->node->objectCount == 0) {
+        if (ptrData->node->objectCount == 0) {
             removeReferenceToPage(ptrData->node);
         }
     } else {
-        if(((uint64_t)ptrData) & 0xFFF) {
+        if (((uint64_t) ptrData) & 0xFFF) {
             return;
         } else {
             PageListNode* node = ptrData->node;
             uint64_t count = ptrData->pageCount;
-            for(count++; count > 0; --count) {
-                if(!node)
+            for (count++; count > 0; --count) {
+                if (!node)
                     return;
                 --node->objectCount;
                 PageListNode* tmp = node;
                 node = node->next;
-                if(tmp->objectCount == 0) {
+                if (tmp->objectCount == 0) {
                     removeReferenceToPage(tmp);
                 }
-                
             }
         }
     }
 }
 
-void MemoryManager::deallocVirtualPageInfo(VirtualMemoryAvailabilityNode* node){
-    free(node); //pls
+void MemoryManager::deallocVirtualPageInfo(VirtualMemoryAvailabilityNode* node) {
+    free(node);//pls
 }
-MemoryManager::VirtualMemoryAvailabilityNode* MemoryManager::allocVirtualPageInfo(){
-    return (VirtualMemoryAvailabilityNode*) malloc(sizeof(VirtualMemoryAvailabilityNode)); //pls
+MemoryManager::VirtualMemoryAvailabilityNode* MemoryManager::allocVirtualPageInfo() {
+    return (VirtualMemoryAvailabilityNode*) malloc(sizeof(VirtualMemoryAvailabilityNode));//pls
 }
 
-}
+}// namespace Kernel

@@ -21,8 +21,8 @@ public:
     bool inputBufferEmpty();
 
     uint32_t getError();
-private:
 
+private:
     void setError(uint32_t);
     void checkHardwareError();
 
@@ -30,4 +30,4 @@ private:
     uint32_t error{};
 };
 
-}
+}// namespace Kernel

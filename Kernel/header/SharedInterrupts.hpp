@@ -1,14 +1,14 @@
 #pragma once
-#include "interrupt.hpp"
 #include "PCI.hpp"
+#include "interrupt.hpp"
 
-namespace Kernel{
+namespace Kernel {
 
-class SharedInterrupt{
+class SharedInterrupt {
 private:
     uint8_t vector;
     void* data;
-    void(*interruptFunction)(void*);
+    void (*interruptFunction)(void*);
 
 public:
     SharedInterrupt(uint8_t vector);
@@ -26,4 +26,4 @@ public:
     void check();
 };
 
-}
+}// namespace Kernel

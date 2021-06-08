@@ -1,8 +1,8 @@
 #pragma once
-#include "stdint.h"
+#include "MassStorage.hpp"
 #include "PCI.hpp"
 #include "inout.hpp"
-#include "MassStorage.hpp"
+#include "stdint.h"
 
 namespace Kernel {
 
@@ -95,12 +95,11 @@ public:
     }
 
 private:
-
     uint32_t ioBase;
     uint32_t controlBase;
 };
 
-class ATADevice : public Device{
+class ATADevice : public Device {
 public:
     virtual ~ATADevice();
     uint16_t signature;
@@ -112,7 +111,7 @@ public:
     Channel channel;
     bool isSlave;
     bool lba48Support;
-    
+
     void read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* dest) override;
     void write(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* src) override;
     void flush() override;
@@ -120,6 +119,6 @@ public:
 
 void openController(uint8_t bus, uint8_t device, uint8_t func, const PCICommonHeader& header);
 
-}
-    
-}
+}// namespace ATA
+
+}// namespace Kernel

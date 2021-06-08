@@ -1,14 +1,13 @@
 #pragma once
 
-#include "PCI.hpp"
 #include "MassStorage.hpp"
+#include "PCI.hpp"
 
 namespace Kernel {
 
-class AHCI{
+class AHCI {
 public:
-    
-    inline explicit AHCI(PCI::BAR& bar): ABAR(bar){}
+    inline explicit AHCI(PCI::BAR& bar) : ABAR(bar) {}
 
     struct CommandSlot;
     struct Port;
@@ -16,10 +15,14 @@ public:
     struct CommandTable;
     struct ReceivedFIS;
 
-    class AHCIDevice: public Device {
+    class AHCIDevice : public Device {
     private:
         enum class DeviceType {
-            SATA, SATAPI, SEMB, PM, UNKNOWN
+            SATA,
+            SATAPI,
+            SEMB,
+            PM,
+            UNKNOWN
         };
         DeviceType type;
         volatile Port* port;
@@ -30,7 +33,7 @@ public:
 
         uint64_t sectorCount;
         bool hasLBA48;
-        
+
         void setup();
         void start();
         void stop();
@@ -41,6 +44,7 @@ public:
         void onInterrupt();
         void writeH2DCommand(uint32_t slot, uint8_t command, uint64_t sectorIndex, uint64_t sectorCount);
         friend class AHCI;
+
     public:
         AHCIDevice(void* port, AHCI* controller);
 
@@ -65,4 +69,4 @@ private:
     AHCIDevice* devices[32];
 };
 
-}
+}// namespace Kernel

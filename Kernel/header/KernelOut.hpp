@@ -1,14 +1,14 @@
 #pragma once
-#include <stdint.h>
 #include "serial.hpp"
+#include <stdint.h>
 
 #define KTODO(name) ::Kernel::kout << "TODO: " << name << " in " << __FILE__ << ':' << (uint64_t) __LINE__ << '\n';
 
 namespace Kernel {
-    class KernelOut;
-    class KernelOutSetSerial;
-    class KernelOutSetDisplay;
-}
+class KernelOut;
+class KernelOutSetSerial;
+class KernelOutSetDisplay;
+}// namespace Kernel
 
 
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetSerial& koss);
@@ -16,70 +16,71 @@ Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSet
 
 namespace Kernel {
 
-    class HexDump {
-    public:
-        inline HexDump(const uint8_t* buffer, uint16_t size): buffer(buffer), size(size) {}
-    public:
-        const uint8_t* buffer;
-        uint16_t size;
-    };
+class HexDump {
+public:
+    inline HexDump(const uint8_t* buffer, uint16_t size) : buffer(buffer), size(size) {}
 
-    class KernelOutSetSerial {
-    private:
-        KernelOutSetSerial(const Serial& serial);
-        Serial serial;
-        friend KernelOutSetSerial setSerial(const Serial& serial);
-        friend Kernel::KernelOut& ::operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetSerial& koss);
-    };
+public:
+    const uint8_t* buffer;
+    uint16_t size;
+};
 
-    KernelOutSetSerial setSerial(const Serial& serial);
+class KernelOutSetSerial {
+private:
+    KernelOutSetSerial(const Serial& serial);
+    Serial serial;
+    friend KernelOutSetSerial setSerial(const Serial& serial);
+    friend Kernel::KernelOut& ::operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetSerial& koss);
+};
 
-    class KernelOutSetDisplay {
-    private:
-        friend KernelOutSetDisplay setDisplay();
-    };
+KernelOutSetSerial setSerial(const Serial& serial);
 
-    KernelOutSetDisplay setDisplay();
+class KernelOutSetDisplay {
+private:
+    friend KernelOutSetDisplay setDisplay();
+};
 
-    class KernelOut{
-    public:
-        static void init();
+KernelOutSetDisplay setDisplay();
 
-        KernelOut();
-        void print(char c);
-        void print(const char* str);
+class KernelOut {
+public:
+    static void init();
 
-        friend Kernel::KernelOut& ::operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetSerial& koss);
-        friend Kernel::KernelOut& ::operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetDisplay& kosd);
-    private:
-        bool isVGA;
-        Serial serial;
+    KernelOut();
+    void print(char c);
+    void print(const char* str);
 
-    };
+    friend Kernel::KernelOut& ::operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetSerial& koss);
+    friend Kernel::KernelOut& ::operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetDisplay& kosd);
 
-    struct Hex{
-        inline Hex(uint64_t hex, uint8_t digits = 1): hex(hex), digits(digits) {}
-        template<typename T>
-        Hex(T hex, uint8_t digits = 1): hex((uint64_t)hex), digits(digits) {}
+private:
+    bool isVGA;
+    Serial serial;
+};
 
-        uint64_t hex;
-        uint8_t digits;
-    };
+struct Hex {
+    inline Hex(uint64_t hex, uint8_t digits = 1) : hex(hex), digits(digits) {}
+    template<typename T>
+    Hex(T hex, uint8_t digits = 1) : hex((uint64_t) hex), digits(digits) {}
 
-    struct BitList{
-        inline BitList(uint64_t bits): bits(bits) {}
-        uint64_t bits;
-    };
+    uint64_t hex;
+    uint8_t digits;
+};
 
-    struct Bin{
-        inline Bin(uint64_t bin, uint8_t digits = 1): bin(bin), digits(digits) {}
+struct BitList {
+    inline BitList(uint64_t bits) : bits(bits) {}
+    uint64_t bits;
+};
 
-        uint64_t bin;
-        uint8_t digits;
-    };
+struct Bin {
+    inline Bin(uint64_t bin, uint8_t digits = 1) : bin(bin), digits(digits) {}
 
-    extern KernelOut kout;
-}
+    uint64_t bin;
+    uint8_t digits;
+};
+
+extern KernelOut kout;
+}// namespace Kernel
 
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, uint64_t n);
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, Kernel::Hex n);
@@ -92,13 +93,13 @@ Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSet
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::HexDump& dump);
 
 inline Kernel::KernelOut& operator<<(Kernel::KernelOut& out, bool n) {
-    if(n)
+    if (n)
         return out << "true";
-    else 
+    else
         return out << "false";
 }
 inline Kernel::KernelOut& operator<<(Kernel::KernelOut& out, int64_t n) {
-    if(n < 0)
+    if (n < 0)
         out.print('-');
-    return out << (uint64_t)(n*-1);
+    return out << (uint64_t) (n * -1);
 }

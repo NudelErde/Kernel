@@ -1,17 +1,17 @@
 #pragma once
 
-#include "stdint.h"
-#include "memory.hpp"
-#include "kernelMem.hpp"
+#include "InterProcessMethod.hpp"
 #include "KernelOut.hpp"
 #include "Scheduler.hpp"
-#include "InterProcessMethod.hpp"
+#include "kernelMem.hpp"
+#include "memory.hpp"
+#include "stdint.h"
 
 namespace Kernel {
 
 constexpr uint64_t stackPageCount = 8;
 
-class Thread{
+class Thread {
     MemoryPage stack[stackPageCount];
     uint64_t currentCodeAddress;
     uint64_t stackAddress;
@@ -27,6 +27,7 @@ class Thread{
 
     friend class Scheduler;
     friend class InterProcessMethod;
+
 public:
     Thread(MemoryPage stack[stackPageCount], uint64_t currentCodeAddress, uint64_t pid, bool debugOnStart = false);
     Thread(Thread&& other) noexcept = default;
@@ -37,24 +38,24 @@ public:
 
     void setWaiting(uint64_t microseconds);
 
-    inline uint64_t getCurrentCodeAddress() {return currentCodeAddress;}
-    inline uint64_t getStackAddress() {return stackAddress;}
-    inline uint64_t getEarliestSchedule() {return earliestSchedule;}
-    inline uint64_t getPID() {return pid;}
-    inline uint64_t getTID() {return tid;}
-    inline uint64_t getStackBaseAddress() {return stack[0].getVirtualAddress();}
+    inline uint64_t getCurrentCodeAddress() { return currentCodeAddress; }
+    inline uint64_t getStackAddress() { return stackAddress; }
+    inline uint64_t getEarliestSchedule() { return earliestSchedule; }
+    inline uint64_t getPID() { return pid; }
+    inline uint64_t getTID() { return tid; }
+    inline uint64_t getStackBaseAddress() { return stack[0].getVirtualAddress(); }
 
     inline void setEnterIPM() { enterIPM = true; }
     inline void setExitIPM() { exitIPM = true; }
 
     inline uint64_t getWaitForPIDResult() { return waitingForExitValue; }
     inline uint8_t makeLock() {
-        for(uint8_t i = 0; i < 32; ++i) {
-            if((i == 0 && locks[i] != 0xFE) || locks[i] != 0xFF) {
-                for(uint8_t j = 0; j < 8; ++j) {
-                    if(i == 0 && j == 0)
+        for (uint8_t i = 0; i < 32; ++i) {
+            if ((i == 0 && locks[i] != 0xFE) || locks[i] != 0xFF) {
+                for (uint8_t j = 0; j < 8; ++j) {
+                    if (i == 0 && j == 0)
                         continue;
-                    if(!(locks[i] & (0b1 << j))) {
+                    if (!(locks[i] & (0b1 << j))) {
                         locks[i] |= (0b1 << j);
                         return i * 8 + j;
                     }
@@ -75,7 +76,7 @@ public:
     static bool isInProgram();
 };
 
-class Process{
+class Process {
 public:
     struct Lock {
         uint64_t tid;
@@ -83,20 +84,21 @@ public:
     };
     static constexpr uint64_t maxSharedPages = 8;
     static constexpr uint64_t maxInterProcessMethods = 16;
+
 private:
     MemoryPage* programPages;
     MemoryManager heap;
-    struct SharedMemoryPageInfo{
+    struct SharedMemoryPageInfo {
         uint64_t sharedPageId;
-        union PageBuffer{
+        union PageBuffer {
             MemoryPage page;
             uint8_t buffer[sizeof(MemoryPage)];
-            PageBuffer(): buffer{}{}
-            ~PageBuffer(){}
+            PageBuffer() : buffer{} {}
+            ~PageBuffer() {}
         } pageBuffer;
     } sharedPages[maxSharedPages];
-    InterProcessMethod interProcessMethods[maxInterProcessMethods]{}; // todo dynamic allocated
-    
+    InterProcessMethod interProcessMethods[maxInterProcessMethods]{};// todo dynamic allocated
+
     uint64_t finalReturnValue{};
     uint64_t count;
     uint64_t pid;
@@ -111,6 +113,7 @@ private:
 
     friend class Scheduler;
     friend class Debug;
+
 public:
     Process(MemoryPage* programPages, uint64_t count, MemoryManager&& heap, uint64_t sharedPagesLocation, uint64_t parentPid);
     Process(Process&& other) noexcept;
@@ -118,7 +121,7 @@ public:
     Process(const Process&) = delete;
     Process& operator=(const Process&) = delete;
     ~Process();
-    
+
     void reload();
 
     uint64_t createSharedMemoryPage();
@@ -129,13 +132,13 @@ public:
 
     inline const char* getArgumentPointer() { return argumentPointer; }
     inline void setArgumentPointer(const char* str) { argumentPointer = str; }
-    inline uint64_t getPID() {return pid;}
-    inline uint64_t getParentPID() {return parentPid;}
-    inline uint64_t getThreadCount() {return threads;}
-    inline InterProcessMethod* getInterPorcessMethods() {return interProcessMethods;}
+    inline uint64_t getPID() { return pid; }
+    inline uint64_t getParentPID() { return parentPid; }
+    inline uint64_t getThreadCount() { return threads; }
+    inline InterProcessMethod* getInterPorcessMethods() { return interProcessMethods; }
     inline void setFinishLock(uint64_t tid, uint8_t lock) {
-        for(uint8_t i = 0; i < 32; ++i) {
-            if(finishLocks[i].tid == 0) {
+        for (uint8_t i = 0; i < 32; ++i) {
+            if (finishLocks[i].tid == 0) {
                 finishLocks[i].tid = tid;
                 finishLocks[i].lock = lock;
                 return;
@@ -146,7 +149,7 @@ public:
     static void init();
     static Process* getLastLoadedProcess();
 
-    inline MemoryManager& getHeap() {return heap;}
+    inline MemoryManager& getHeap() { return heap; }
 
     inline void exit(uint64_t returnValue) {
         finished = true;
@@ -157,4 +160,4 @@ public:
     inline uint64_t getReturnValue() { return finalReturnValue; }
 };
 
-}
+}// namespace Kernel

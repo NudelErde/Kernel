@@ -2,7 +2,7 @@
 #include "inout.hpp"
 
 namespace Kernel {
-    
+
 static uint8_t centuryRegister;
 
 void setCenturyRegister(uint8_t _centuryRegister) {
@@ -10,8 +10,8 @@ void setCenturyRegister(uint8_t _centuryRegister) {
 }
 
 static int isRTCUpdateInProgess() {
-      outb(0x70, 0x0A);
-      return (inb(0x71) & 0x80);
+    outb(0x70, 0x0A);
+    return (inb(0x71) & 0x80);
 }
 
 static uint8_t getRTCRegister(uint8_t reg) {
@@ -37,10 +37,11 @@ static uint64_t toTime(uint8_t year, uint8_t month, uint8_t day, uint8_t hour, u
 }
 
 uint64_t timeSinceEpoch() {
-    if(centuryRegister == 0)
+    if (centuryRegister == 0)
         return 0;
-    
-    while(isRTCUpdateInProgess()); //finish update
+
+    while (isRTCUpdateInProgess())
+        ;//finish update
     uint8_t second = getRTCRegister(0x00);
     uint8_t minute = getRTCRegister(0x02);
     uint8_t hour = getRTCRegister(0x04);
@@ -53,7 +54,7 @@ uint64_t timeSinceEpoch() {
 
     bool pm = hour & 0x80;
 
-    if(!(registerB & 0x04)) {
+    if (!(registerB & 0x04)) {
         //crack BCD format :c
         second = BCD2Bin(second);
         minute = BCD2Bin(minute);
@@ -64,7 +65,7 @@ uint64_t timeSinceEpoch() {
         century = BCD2Bin(century);
     }
 
-    if(!(registerB & 0x02) && pm) {
+    if (!(registerB & 0x02) && pm) {
         hour += 12;
     }
 
@@ -73,4 +74,4 @@ uint64_t timeSinceEpoch() {
     return toTime(year, monthOfYear, dayOfMonth, hour, minute, second);
 }
 
-}
+}// namespace Kernel

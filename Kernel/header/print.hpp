@@ -4,9 +4,8 @@
 
 namespace Kernel {
 
-class Print{
+class Print {
 public:
-
     enum class Color {
         BLACK = 0,
         BLUE = 1,
@@ -32,7 +31,7 @@ public:
     static void print(int i);
     static void printHex(uint64_t hex);
     static void printBaseN(uint64_t number, uint8_t base);
-    
+
     static void println(const char* str);
     static void println(char c);
     static void println(int i);
@@ -44,4 +43,4 @@ public:
     static void setColor(Color foreground, Color background);
 };
 
-}
+}// namespace Kernel

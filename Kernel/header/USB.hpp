@@ -3,11 +3,9 @@
 
 namespace Kernel {
 
-class USB{
+class USB {
 public:
-
-static USB* openController(PCI* dev, const Kernel::PCICommonHeader &header);
-
+    static USB* openController(PCI* dev, const Kernel::PCICommonHeader& header);
 };
 
-}
+}// namespace Kernel

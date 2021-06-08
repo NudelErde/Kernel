@@ -3,9 +3,9 @@
 
 namespace Kernel {
 
-class UhciUsbController: public USB {
+class UhciUsbController : public USB {
 private:
-    struct TransferDescriptor{
+    struct TransferDescriptor {
         uint32_t nextLink;
         uint32_t hcData;
         uint32_t controlData;
@@ -15,17 +15,22 @@ private:
         uint32_t softwareData3;
     } __attribute__((packed));
 
-    struct QueueHead{
+    struct QueueHead {
         uint32_t nextQueueDescriptor;
         uint32_t firstElementDescriptor;
     } __attribute__((packed));
 
-    enum class PacketType{
-        Isochronous = 3, Interrupt = 0, Control = 1, Bulk = 2
+    enum class PacketType {
+        Isochronous = 3,
+        Interrupt = 0,
+        Control = 1,
+        Bulk = 2
     };
 
     enum class PacketIdentification : uint8_t {
-        IN = 0x69, OUT = 0xE1, SETUP = 0x2D
+        IN = 0x69,
+        OUT = 0xE1,
+        SETUP = 0x2D
     };
 
     static_assert(sizeof(QueueHead) == sizeof(uint32_t) * 2);
@@ -40,22 +45,22 @@ private:
     QueueHead* bulkQueue;
     uint8_t queueAreaBitmap[(pageSize / 16) / 8];
     uint32_t nextQueueElement;
-    
+
     bool isQueueAreaUnused(uint32_t address);
     uint32_t allocateNewQueueData();
     void deallocateQueueData(uint32_t address);
-    
+
     static constexpr uint8_t dataPages = 8;
     static constexpr uint8_t chunkSize = 128;
     void* dataArea[dataPages];
     uint8_t dataBitmap[(dataPages * pageSize / chunkSize) / 8];
     uint32_t allocateNewData(uint32_t size);
     void deallocateData(uint32_t address, uint32_t size);
-    
+
     bool checkIfValid(uint32_t pd);
 
 public:
-    UhciUsbController(uint8_t bus, uint8_t device, uint8_t func, const Kernel::PCICommonHeader &header);
+    UhciUsbController(uint8_t bus, uint8_t device, uint8_t func, const Kernel::PCICommonHeader& header);
 
     uint32_t addPacket(PacketType, PacketIdentification, uint8_t address, uint8_t function);
     void setPacketData(uint32_t pd, uint32_t size, void* data);
@@ -66,4 +71,4 @@ public:
     void onInterrupt();
 };
 
-}
+}// namespace Kernel

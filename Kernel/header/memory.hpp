@@ -1,8 +1,8 @@
 #pragma once
 
 #include "serial.hpp"
-#include "stdint.h"
 #include "stddef.h"
+#include "stdint.h"
 
 namespace Kernel {
 
@@ -20,21 +20,21 @@ struct MemoryInfo {
     MemoryInfo* nextNode;
 };
 
-union PageTableElement{
-    struct{
-        volatile bool present: 1;
-        volatile bool writeEnable: 1;
-        volatile bool allowUserAccess: 1;
-        volatile bool writeThrough: 1;
-        volatile bool cacheDisable: 1;
-        volatile uint16_t zero: 7;
+union PageTableElement {
+    struct {
+        volatile bool present : 1;
+        volatile bool writeEnable : 1;
+        volatile bool allowUserAccess : 1;
+        volatile bool writeThrough : 1;
+        volatile bool cacheDisable : 1;
+        volatile uint16_t zero : 7;
     } flags;
     volatile uint64_t address;
-}__attribute__((__packed__));
+} __attribute__((__packed__));
 
-struct PageTable{
+struct PageTable {
     volatile PageTableElement elements[512];
-}__attribute__((__packed__));
+} __attribute__((__packed__));
 
 void get_multiboot_infos();
 MemoryInfo* getMemoryInfoPtr();
@@ -74,8 +74,8 @@ public:
 
     static uint64_t createNewPageTable();
     static uint64_t getPhysicalAddressFromVirtual(uint64_t address);
-private:
 
+private:
     uint64_t physicalAddress{};
     uint64_t virtualAddress{};
     volatile PageTableElement* entry{};
@@ -92,11 +92,11 @@ void memcpy(void* dest, const void* src, uint64_t count);
 void memset(void* dest, uint8_t value, uint64_t count);
 bool memequ(const void* a, const void* b, uint64_t count);
 
-}
+}// namespace Kernel
 
 extern Kernel::PageTable page_table_l4;
 extern Kernel::PageTable page_table_l3;
 extern Kernel::PageTable page_table_l2;
 
-void* operator new (size_t count, void* ptr );
-void* operator new[] (size_t count, void* ptr );
+void* operator new(size_t count, void* ptr);
+void* operator new[](size_t count, void* ptr);

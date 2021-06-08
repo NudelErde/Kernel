@@ -1,7 +1,7 @@
 #pragma once
 
-#include "stdint.h"
 #include "memory.hpp"
+#include "stdint.h"
 
 namespace Kernel {
 
@@ -13,7 +13,7 @@ public:
 
     static void endInterrupt();
 
-    static void interruptIn(uint64_t microseconds, void(*callback)(void(*)()));
+    static void interruptIn(uint64_t microseconds, void (*callback)(void (*)()));
     static uint64_t getTimeLeft();
 
     inline static uint64_t localAPICAddress;
@@ -26,6 +26,7 @@ public:
     static IoAPIC* initIOApics(uint8_t* count);
 
     void setMapping(uint8_t interruptNum, uint8_t resultVector, uint8_t cpuId);
+
 private:
     IoAPIC(uint64_t address);
 
@@ -33,4 +34,4 @@ private:
     MemoryPage page;
 };
 
-}
+}// namespace Kernel

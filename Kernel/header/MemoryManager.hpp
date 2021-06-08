@@ -2,11 +2,10 @@
 #include "memory.hpp"
 #include "stdint.h"
 
-namespace Kernel{
+namespace Kernel {
 
 class MemoryManager {
 public:
-
     MemoryManager(bool inKernel, uint64_t start, uint64_t pageCount);
     ~MemoryManager();
 
@@ -23,7 +22,6 @@ public:
     static MemoryManager* getActiveHeap();
 
 private:
-
     struct PageBuffer;
 
     struct PageListNode {
@@ -76,4 +74,4 @@ private:
     bool valid;
 };
 
-}
+}// namespace Kernel

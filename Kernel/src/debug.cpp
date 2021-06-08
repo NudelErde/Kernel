@@ -1,12 +1,12 @@
 #include "debug.hpp"
 #include "KernelOut.hpp"
+#include "interrupt.hpp"
 #include "process.hpp"
 #include "tss.hpp"
-#include "interrupt.hpp"
 
-struct PrintPointer{
+struct PrintPointer {
     uint64_t pointer;
-    PrintPointer(uint64_t pointer): pointer(pointer){}
+    PrintPointer(uint64_t pointer) : pointer(pointer) {}
 };
 
 extern uint8_t kernel_start;
@@ -18,19 +18,19 @@ Kernel::KernelOut& operator<<(Kernel::KernelOut& out, PrintPointer pp) {
     using namespace Kernel;
     uint64_t pointer = pp.pointer;
     out << Hex(pointer);
-    if(pointer < (uint64_t)(&kernel_start)) {
+    if (pointer < (uint64_t) (&kernel_start)) {
         out << " (low data)";
-    } else if(pointer <= (uint64_t)(&boot_end)) {
+    } else if (pointer <= (uint64_t) (&boot_end)) {
         out << " (boot)";
-    } else if(pointer <= (uint64_t)(&code_end)) {
+    } else if (pointer <= (uint64_t) (&code_end)) {
         out << " (kernel code)";
-    } else if(pointer <= (uint64_t)(&kernel_end)) {
+    } else if (pointer <= (uint64_t) (&kernel_end)) {
         out << " (kernel data)";
     } else {
         out << " (high data)";
     }
     TSS* tss = getTss();
-    if(tss) {
+    if (tss) {
         if (pointer <= tss->ist1 && pointer > tss->ist1 - stackPageCount * pageSize) {
             out << " (Interrupt stack)";
         } else if (pointer <= tss->ist2 && pointer > tss->ist2 - stackPageCount * pageSize) {
@@ -39,33 +39,33 @@ Kernel::KernelOut& operator<<(Kernel::KernelOut& out, PrintPointer pp) {
             out << " (Ring 0 stack)";
         }
     }
-    if(Thread::isInProgram()) {
+    if (Thread::isInProgram()) {
         uint64_t threadBaseAddress = Thread::getCurrent()->getStackBaseAddress();
-        if(pointer >= threadBaseAddress && pointer < threadBaseAddress + stackPageCount * pageSize) {
+        if (pointer >= threadBaseAddress && pointer < threadBaseAddress + stackPageCount * pageSize) {
             out << " (Thread stack)";
         }
     }
     return out;
 }
 
-struct PrintSegment{
+struct PrintSegment {
     uint16_t segmentSelector;
-    PrintSegment(uint16_t segmentSelector): segmentSelector(segmentSelector){}
+    PrintSegment(uint16_t segmentSelector) : segmentSelector(segmentSelector) {}
 };
 
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, PrintSegment ps) {
-    out << (uint64_t)(ps.segmentSelector >> 3);
-    out << " (" << ((ps.segmentSelector & 0b100)?'L':'G') << "DT) (Ring ";
-    out << (uint64_t)(ps.segmentSelector & 0b11) << ')';
+    out << (uint64_t) (ps.segmentSelector >> 3);
+    out << " (" << ((ps.segmentSelector & 0b100) ? 'L' : 'G') << "DT) (Ring ";
+    out << (uint64_t) (ps.segmentSelector & 0b11) << ')';
     return out;
 }
 
 namespace Kernel {
 
 static struct {
-    typedef bool(*Callback)();
+    typedef bool (*Callback)();
 
-    Callback callbacks[6]; // index 4 is single step; index 5 is breakpoint instruction
+    Callback callbacks[6];// index 4 is single step; index 5 is breakpoint instruction
 } data;
 
 void onInvalidOpcode(const Interrupt& i) {
@@ -75,23 +75,23 @@ void onInvalidOpcode(const Interrupt& i) {
 }
 
 static bool tryHandle(const Interrupt& i, uint8_t number) {
-    if(number < 4) {
-        if(data.callbacks[number]) {
-            if(data.callbacks[number]()) {
+    if (number < 4) {
+        if (data.callbacks[number]) {
+            if (data.callbacks[number]()) {
                 Debug::removeBreakpoint(number);
                 return true;
             }
         }
-    } else if(number == 4) {
-        if(data.callbacks[number]) {
-            if(data.callbacks[number]()) {
-                ((uint64_t*)i.stackFrame)[2] &= ~0x100;
+    } else if (number == 4) {
+        if (data.callbacks[number]) {
+            if (data.callbacks[number]()) {
+                ((uint64_t*) i.stackFrame)[2] &= ~0x100;
                 return true;
             }
         }
-    } else if(number == 5) {
-        if(data.callbacks[number]) {
-            if(data.callbacks[number]()) {
+    } else if (number == 5) {
+        if (data.callbacks[number]) {
+            if (data.callbacks[number]()) {
                 return true;
             }
         }
@@ -100,36 +100,38 @@ static bool tryHandle(const Interrupt& i, uint8_t number) {
 }
 
 void onBreakpoint(const Interrupt& i) {
-    if(!tryHandle(i, 5)) {
+    if (!tryHandle(i, 5)) {
         kout << "On int3 breakpoint\n";
         Debug::printDebugInfo(i.stackFrame);
-        ((uint64_t*)i.stackFrame)[2] |= 0x100;
+        ((uint64_t*) i.stackFrame)[2] |= 0x100;
     }
 }
 
 void onDebug(const Interrupt& i) {
     uint64_t dr6;
     bool handled = false;
-    asm("mov %%dr6, %0":"=g"(dr6)::);
-    if(dr6 & 0b1 << 0) {
+    asm("mov %%dr6, %0"
+        : "=g"(dr6)::);
+    if (dr6 & 0b1 << 0) {
         handled |= tryHandle(i, 0);
     }
-    if(dr6 & 0b1 << 1) {
+    if (dr6 & 0b1 << 1) {
         handled |= tryHandle(i, 1);
     }
-    if(dr6 & 0b1 << 2) {
+    if (dr6 & 0b1 << 2) {
         handled |= tryHandle(i, 2);
     }
-    if(dr6 & 0b1 << 3) {
+    if (dr6 & 0b1 << 3) {
         handled |= tryHandle(i, 3);
     }
-    if(dr6 & 0b1 << 14) {
+    if (dr6 & 0b1 << 14) {
         handled |= tryHandle(i, 4);
     }
     dr6 &= 0b1111 | (0b111 << 13);
-    asm("mov %0, %%dr6"::"a"(dr6):);
+    asm("mov %0, %%dr6" ::"a"(dr6)
+        :);
 
-    if(!handled) {
+    if (!handled) {
         Debug::printDebugInfo(i.stackFrame);
     }
 }
@@ -148,60 +150,93 @@ void Debug::init() {
 }
 
 void Debug::removeBreakpoint(uint8_t debugNum) {
-    switch(debugNum) {
-        case 0: asm("mov %0, %%dr0"::"a"(0):); break;
-        case 1: asm("mov %0, %%dr1"::"a"(0):); break;
-        case 2: asm("mov %0, %%dr2"::"a"(0):); break;
-        case 3: asm("mov %0, %%dr3"::"a"(0):); break;
-        default: return;
+    switch (debugNum) {
+        case 0:
+            asm("mov %0, %%dr0" ::"a"(0)
+                :);
+            break;
+        case 1:
+            asm("mov %0, %%dr1" ::"a"(0)
+                :);
+            break;
+        case 2:
+            asm("mov %0, %%dr2" ::"a"(0)
+                :);
+            break;
+        case 3:
+            asm("mov %0, %%dr3" ::"a"(0)
+                :);
+            break;
+        default:
+            return;
     }
 
     uint64_t dr7;
-    asm("mov %%dr7, %0":"=a"(dr7)::);
-    dr7 &= ~(0b1 << (2 * debugNum + 1)); // disable
-    dr7 &= ~((0b1111) << (16 + debugNum * 4)); // clear condition and length field
+    asm("mov %%dr7, %0"
+        : "=a"(dr7)::);
+    dr7 &= ~(0b1 << (2 * debugNum + 1));      // disable
+    dr7 &= ~((0b1111) << (16 + debugNum * 4));// clear condition and length field
 
-    asm("mov %0, %%dr7":"=a"(dr7)::);
+    asm("mov %0, %%dr7"
+        : "=a"(dr7)::);
 
     data.callbacks[debugNum] = nullptr;
 }
 
-void Debug::setBreakpoint(uint8_t debugNum, uint64_t address, Condition c, bool(*callback)()) {
+void Debug::setBreakpoint(uint8_t debugNum, uint64_t address, Condition c, bool (*callback)()) {
     constexpr uint64_t debugExtensionBit = 0b1 << 3;
     uint64_t cr4;
-    asm("mov %%cr4, %0":"=a"(cr4)::);
+    asm("mov %%cr4, %0"
+        : "=a"(cr4)::);
     cr4 |= debugExtensionBit;
-    asm("mov %0, %%cr4"::"a"(cr4):);
-    switch(debugNum) {
-        case 0: asm("mov %0, %%dr0"::"a"(address):); break;
-        case 1: asm("mov %0, %%dr1"::"a"(address):); break;
-        case 2: asm("mov %0, %%dr2"::"a"(address):); break;
-        case 3: asm("mov %0, %%dr3"::"a"(address):); break;
-        default: return;
+    asm("mov %0, %%cr4" ::"a"(cr4)
+        :);
+    switch (debugNum) {
+        case 0:
+            asm("mov %0, %%dr0" ::"a"(address)
+                :);
+            break;
+        case 1:
+            asm("mov %0, %%dr1" ::"a"(address)
+                :);
+            break;
+        case 2:
+            asm("mov %0, %%dr2" ::"a"(address)
+                :);
+            break;
+        case 3:
+            asm("mov %0, %%dr3" ::"a"(address)
+                :);
+            break;
+        default:
+            return;
     }
     uint64_t dr7;
-    asm("mov %%dr7, %0":"=a"(dr7)::);
-    dr7 |= 0b1 << (2 * debugNum + 1); // enable
-    dr7 &= ~((0b1111) << (16 + debugNum * 4)); // clear condition and length field
-    dr7 |= ((uint8_t)c) << (16 + debugNum * 4); // condition
+    asm("mov %%dr7, %0"
+        : "=a"(dr7)::);
+    dr7 |= 0b1 << (2 * debugNum + 1);           // enable
+    dr7 &= ~((0b1111) << (16 + debugNum * 4));  // clear condition and length field
+    dr7 |= ((uint8_t) c) << (16 + debugNum * 4);// condition
 
     data.callbacks[debugNum] = callback;
 
-    asm("mov %0, %%dr7":"=a"(dr7)::);
+    asm("mov %0, %%dr7"
+        : "=a"(dr7)::);
 }
 
 uint8_t readChar() {
     Serial s(0x3F8);
-    while (s.inputBufferEmpty());
+    while (s.inputBufferEmpty())
+        ;
     return s.read();
 }
 
 uint64_t readHex() {
     uint64_t num = 0;
-    while(true) {
+    while (true) {
         uint8_t ch = readChar();
-        const char *digits = "0123456789ABCDEF";
-        if(ch >= 'a' && ch <= 'f') {
+        const char* digits = "0123456789ABCDEF";
+        if (ch >= 'a' && ch <= 'f') {
             ch += 'A' - 'a';
         }
         for (uint64_t i = 0; i < 16; ++i) {
@@ -225,56 +260,57 @@ static void readMemory() {
     kout << "\nData: ";
     switch (size) {
         case 1:
-            kout << "0x" << Hex(*(uint8_t*)address, 2) << '\n';
+            kout << "0x" << Hex(*(uint8_t*) address, 2) << '\n';
             break;
         case 2:
-            kout << "0x" << Hex(*(uint16_t*)address, 4) << '\n';
+            kout << "0x" << Hex(*(uint16_t*) address, 4) << '\n';
             break;
         case 4:
-            kout << "0x" << Hex(*(uint32_t*)address, 8) << '\n';
+            kout << "0x" << Hex(*(uint32_t*) address, 8) << '\n';
             break;
         case 8:
-            kout << "0x" << Hex(*(uint64_t*)address, 16) << '\n';
+            kout << "0x" << Hex(*(uint64_t*) address, 16) << '\n';
             break;
         default:
-            kout << '\n' <<HexDump((uint8_t*)address, size) << '\n';
+            kout << '\n'
+                 << HexDump((uint8_t*) address, size) << '\n';
             break;
     }
 }
 
 static void stackRead(uint64_t base, uint64_t instruction) {
-    while(true) {
+    while (true) {
         kout << "Base: 0x" << Hex(base) << " Instr: 0x" << Hex(instruction) << '\n';
         kout << "Stack variable (v), Down (d), Up (u)";
         uint8_t ch = readChar();
         kout << '\n';
-        if(ch == 'd' || ch == 'D') {
-            uint64_t rbp = *((uint64_t*)base);
-            uint64_t rip = *((uint64_t*)(base + 8));
+        if (ch == 'd' || ch == 'D') {
+            uint64_t rbp = *((uint64_t*) base);
+            uint64_t rip = *((uint64_t*) (base + 8));
             stackRead(rbp, rip);
         }
-        if(ch == 'v' || ch == 'V') {
+        if (ch == 'v' || ch == 'V') {
             kout << "Offset: 0x";
             uint64_t offset = readHex();
             kout << '\n';
-            kout << "Value: 0x " << Hex(*((uint64_t*)(base - offset))) << '\n';
+            kout << "Value: 0x " << Hex(*((uint64_t*) (base - offset))) << '\n';
         }
-        if(ch == 'u' || ch == 'U') {
+        if (ch == 'u' || ch == 'U') {
             return;
         }
     }
 }
 
 static void interactive(uint64_t base, uint64_t instruction) {
-    while(true) {
-        while(true) {
+    while (true) {
+        while (true) {
             kout << "Memory (m), Stack (s)";
             uint8_t ch = readChar();
             kout << '\n';
-            if(ch == 'm' || ch == 'M') {
+            if (ch == 'm' || ch == 'M') {
                 readMemory();
             }
-            if(ch == 's' || ch == 'S') {
+            if (ch == 's' || ch == 'S') {
                 stackRead(base, instruction);
             }
         }
@@ -282,35 +318,36 @@ static void interactive(uint64_t base, uint64_t instruction) {
 }
 
 void Debug::printDebugInfo(void* stackPointer) {
-    uint64_t* stack = (uint64_t*)stackPointer;
+    uint64_t* stack = (uint64_t*) stackPointer;
     uint64_t rip = stack[0];
     uint64_t rsp = stack[3];
     uint64_t flags = stack[2];
     uint64_t codeSegment = stack[1];
     uint64_t stackSegment = stack[4];
     kout << (Thread::isInProgram() ? "In program" : "In kernel") << '\n';
-    if(Thread::isInProgram()) {
-        kout << "Program name: " << Process::getLastLoadedProcess()->getArgumentPointer() << ':' << Process::getLastLoadedProcess()->getPID() << ':' << Thread::getCurrent()->getPID() <<'\n';
+    if (Thread::isInProgram()) {
+        kout << "Program name: " << Process::getLastLoadedProcess()->getArgumentPointer() << ':' << Process::getLastLoadedProcess()->getPID() << ':' << Thread::getCurrent()->getPID() << '\n';
         kout << "Static program pages: \n";
-        for(uint64_t i = 0; i < Process::getLastLoadedProcess()->count; ++i) {
+        for (uint64_t i = 0; i < Process::getLastLoadedProcess()->count; ++i) {
             kout << Hex(Process::getLastLoadedProcess()->programPages[i].getVirtualAddress()) << '\n';
         }
     }
     uint64_t rbp;
-    asm("mov %%rbp, %0":"=a"(rbp)::);
+    asm("mov %%rbp, %0"
+        : "=a"(rbp)::);
     kout << "Instruction pointer: 0x" << PrintPointer(rip) << '\n';
     kout << "Stack pointer:       0x" << PrintPointer(rsp) << '\n';
     kout << "Stack base pointer:  0x" << PrintPointer(rbp) << '\n';
     kout << "Code segment:          " << PrintSegment(codeSegment) << '\n';
     kout << "Stack segment:         " << PrintSegment(stackSegment) << '\n';
-    const char *names[]{"Carry Flag", "Reserved", "Parity Flag", "Reserved", "Auxiliary Carry Flag", "Reserved", "Zero Flag", "Sign Flag", "Trap Flag", "Interrupt Enable Flag", "Direction Flag", "Overflow Flag", "IOPL 	I/O Privilege Level", "IOPL 	I/O Privilege Level", "Nested Task", "Reserved", "Resume Flag", "Virtual-8086 Mode", "Alignment Check / Access Control", "Virtual Interrupt Flag", "Virtual Interrupt Pending", "ID Flag "};
+    const char* names[]{"Carry Flag", "Reserved", "Parity Flag", "Reserved", "Auxiliary Carry Flag", "Reserved", "Zero Flag", "Sign Flag", "Trap Flag", "Interrupt Enable Flag", "Direction Flag", "Overflow Flag", "IOPL 	I/O Privilege Level", "IOPL 	I/O Privilege Level", "Nested Task", "Reserved", "Resume Flag", "Virtual-8086 Mode", "Alignment Check / Access Control", "Virtual Interrupt Flag", "Virtual Interrupt Pending", "ID Flag "};
     constexpr uint64_t entries = sizeof(names) / sizeof(*names);
 
     kout << "Flags: ";
-    flags ^= 0b10; // flip always 1 bit
-    for(uint64_t i = 0; i < 64; ++i) {
-        if(flags & 0b1) {
-            if(i < entries) {
+    flags ^= 0b10;// flip always 1 bit
+    for (uint64_t i = 0; i < 64; ++i) {
+        if (flags & 0b1) {
+            if (i < entries) {
                 kout << i << ':' << names[i] << ' ';
             } else {
                 kout << i << ' ';
@@ -354,7 +391,7 @@ void Debug::printDebugInfo(void* stackPointer) {
 //static uint8_t traceIndex;
 //static bool traceInstructions;
 //static uint8_t traceReadFrom0;
-//    
+//
 //
 //static DebugModeInformation information;
 //constexpr uint64_t debugExtensionBit = 0b1 << 3;
@@ -663,7 +700,7 @@ void Debug::printDebugInfo(void* stackPointer) {
 //    if(information.breakpoint2) kout << "Breakpoint 2\n";
 //    if(information.breakpoint3) kout << "Breakpoint 3\n";
 //    if(information.singleStep) kout << "Single step\n";
-//    
+//
 //    uint64_t rip = stack[0];
 //    uint64_t rsp = stack[3];
 //    uint64_t flags = stack[2];
@@ -678,7 +715,7 @@ void Debug::printDebugInfo(void* stackPointer) {
 //    if(lastCodeAddress) {
 //        if(diff & 0b1ull<<63)
 //            kout << "Instruction pointer diff: -" << (uint64_t)(((int64_t)diff) * -1)<< '\n';
-//        else    
+//        else
 //            kout << "Instruction pointer diff: " << diff << '\n';
 //    }
 //    lastCodeAddress = rip;
@@ -745,4 +782,4 @@ void Debug::printDebugInfo(void* stackPointer) {
 //    information.singleStep = false;
 //}
 //
-}
+}// namespace Kernel

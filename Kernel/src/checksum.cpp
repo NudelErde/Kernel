@@ -1,6 +1,6 @@
 #include "checksum.hpp"
 
-namespace Kernel{
+namespace Kernel {
 
 
 //source: https://github.com/Voxer/sse4_crc32/blob/master/src/table.cpp
@@ -14,7 +14,7 @@ uint32_t table[8][256];
 void crc32c_init() {
     uint32_t i, j, crc;
 
-    for (i = 0; i < 256; i++){
+    for (i = 0; i < 256; i++) {
         crc = i;
         crc = crc & 1 ? (crc >> 1) ^ CRC32C_POLYNOMIAL : crc >> 1;
         crc = crc & 1 ? (crc >> 1) ^ CRC32C_POLYNOMIAL : crc >> 1;
@@ -36,27 +36,27 @@ void crc32c_init() {
     }
 }
 
-uint32_t crc32c(uint32_t initCrc, const uint8_t*buf, uint64_t len) {
-    const uint8_t *next = buf;
+uint32_t crc32c(uint32_t initCrc, const uint8_t* buf, uint64_t len) {
+    const uint8_t* next = buf;
     uint64_t crc = initCrc;
 
     // If the string is empty, return 0
     if (len == 0) {
-        return (uint32_t)crc;
+        return (uint32_t) crc;
     }
 
     // XOR the initial CRC with INT_MAX
     crc ^= 0xFFFFFFFF;
 
     // Process byte-by-byte until aligned to 8-byte boundary
-    while (len && ((uint64_t)next & 7) != 0) {
+    while (len && ((uint64_t) next & 7) != 0) {
         crc = table[0][(crc ^ *next++) & 0xff] ^ (crc >> 8);
         len--;
     }
 
     // Process 8 bytes at a time
     while (len >= 8) {
-        crc ^= *(uint64_t *)next;
+        crc ^= *(uint64_t*) next;
         crc = table[7][(crc >> 0) & 0xff] ^
               table[6][(crc >> 8) & 0xff] ^
               table[5][(crc >> 16) & 0xff] ^
@@ -76,7 +76,7 @@ uint32_t crc32c(uint32_t initCrc, const uint8_t*buf, uint64_t len) {
     }
 
     // XOR again with INT_MAX
-    return (uint32_t)(crc ^= 0xFFFFFFFF);
+    return (uint32_t) (crc ^= 0xFFFFFFFF);
 }
 
-}
+}// namespace Kernel

@@ -7,8 +7,7 @@ MemoryManager& getKernelMemoryManager();
 void initKernelDynamicMemory();
 MemoryManager& getCurrentMemoryManager();
 
-
-}
+}// namespace Kernel
 
 void* operator new(uint64_t count);
 void* operator new[](uint64_t count);

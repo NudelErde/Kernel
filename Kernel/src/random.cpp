@@ -14,11 +14,11 @@ bool hasCPUTrueRandom() {
 }
 uint64_t getCPUTrueRandom() {
     __cpu_random_generate();
-    if(__cpu_random_value_success) {
+    if (__cpu_random_value_success) {
         return __cpu_random_value;
     } else {
         return 0;
     }
 }
 
-}
+}// namespace Kernel

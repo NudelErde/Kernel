@@ -1,8 +1,8 @@
 #include "UHCI.hpp"
-#include "inout.hpp"
 #include "KernelOut.hpp"
-#include "wait.hpp"
 #include "SharedInterrupts.hpp"
+#include "inout.hpp"
+#include "wait.hpp"
 
 /*
 

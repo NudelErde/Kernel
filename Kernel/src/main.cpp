@@ -1,30 +1,30 @@
-#include "start.h"
-#include "print.hpp"
-#include "serial.hpp"
+#include "ACPI.hpp"
+#include "AHCI.hpp"
+#include "APIC.hpp"
+#include "FileSystem.hpp"
+#include "IDE.hpp"
+#include "KernelOut.hpp"
+#include "MassStorage.hpp"
+#include "MemoryManager.hpp"
+#include "PCI.hpp"
+#include "Partition.hpp"
+#include "Scheduler.hpp"
+#include "SharedInterrupts.hpp"
+#include "USB.hpp"
+#include "checksum.hpp"
+#include "debug.hpp"
+#include "elf.hpp"
 #include "inout.hpp"
 #include "interrupt.hpp"
-#include <stddef.h>
 #include "interruptExceptionHandler.hpp"
-#include "memory.hpp"
-#include "PCI.hpp"
-#include "ACPI.hpp"
-#include "wait.hpp"
-#include "KernelOut.hpp"
-#include "MemoryManager.hpp"
-#include "IDE.hpp"
 #include "kernelMem.hpp"
-#include "Partition.hpp"
-#include "FileSystem.hpp"
-#include "checksum.hpp"
-#include "elf.hpp"
-#include "APIC.hpp"
-#include "Scheduler.hpp"
+#include "memory.hpp"
+#include "print.hpp"
+#include "serial.hpp"
+#include "start.h"
 #include "tss.hpp"
-#include "debug.hpp"
-#include "USB.hpp"
-#include "MassStorage.hpp"
-#include "AHCI.hpp"
-#include "SharedInterrupts.hpp"
+#include "wait.hpp"
+#include <stddef.h>
 
 //docker run --rm -v "${pwd}:/root/env" myos-buildenv make build-x86_64; qemu-system-x86_64 -cdrom dist/kernel.iso -drive file=image_file,format=raw -L "C:\Program Files\qemu" -m 6G --serial stdio -boot d
 
@@ -40,9 +40,9 @@ USB* usb;
 extern "C" void __cxa_pure_virtual() { asm("int $32"); }
 
 void configDevice(const PCICommonHeader& header, PCI* dev) {
-    if((header.headerType & ~0x80) != 0x00)
+    if ((header.headerType & ~0x80) != 0x00)
         return;
-    for(uint8_t i = 0; i < 6; ++i) {
+    for (uint8_t i = 0; i < 6; ++i) {
         dev->bars[i].setup(dev, i);
     }
 }
@@ -50,29 +50,29 @@ void configDevice(const PCICommonHeader& header, PCI* dev) {
 void loadPCI(bool withText) {
     LinkedList<PCI> pciDevices = PCI::checkAllBuses();
     bool cont = true;
-    if(withText) kout << "PCI devices: \n";
-    for(auto iter = pciDevices.getIterator(); iter.valid() && cont; cont = iter.next()) {
+    if (withText) kout << "PCI devices: \n";
+    for (auto iter = pciDevices.getIterator(); iter.valid() && cont; cont = iter.next()) {
         auto d = iter.get();
         PCICommonHeader header;
         PCI::readCommonHeader(header, d);
 
-        if(withText) kout << "Class: " << Hex(header.classCode, 2) << " Subclass: " << Hex(header.subclass, 2)  << " ProgIf: " << Hex(header.progIF, 2) << " Status: " << BitList(header.status) << '\n';
-        
+        if (withText) kout << "Class: " << Hex(header.classCode, 2) << " Subclass: " << Hex(header.subclass, 2) << " ProgIf: " << Hex(header.progIF, 2) << " Status: " << BitList(header.status) << '\n';
+
         configDevice(header, d);
-        if(d->selfTest() != 0) {
+        if (d->selfTest() != 0) {
             kout << "Invalid self test\n";
             continue;
         }
-        
-        if(header.classCode == 0x01 && header.subclass == 0x01) {
+
+        if (header.classCode == 0x01 && header.subclass == 0x01) {
             ATA::openController(d->bus, d->device, d->function, header);
-        } else if(header.classCode == 0x01 && header.subclass == 0x06 && header.progIF == 0x01) {
+        } else if (header.classCode == 0x01 && header.subclass == 0x06 && header.progIF == 0x01) {
             AHCI::openController(d, header);
-        } else if(header.classCode == 0x0C && header.subclass == 0x03) {
+        } else if (header.classCode == 0x0C && header.subclass == 0x03) {
             usb = USB::openController(d, header);
         } else {
-            if(header.classCode == 0x06)
-                continue; // skip bridge devices
+            if (header.classCode == 0x06)
+                continue;// skip bridge devices
         }
     }
 }
@@ -92,12 +92,12 @@ void kern_start() {
     Debug::init();
     PhysicalMemoryManagment::init();
 
-    setupTss((uint64_t)gdt64, 2);
+    setupTss((uint64_t) gdt64, 2);
     initKernelDynamicMemory();
     readACPITables();
-    
+
     IoAPIC* apics = IoAPIC::initIOApics(nullptr);
-    apics[0].setMapping(getAPICMapping(0), 240, 0); // map legacy pit interrupt to 240
+    apics[0].setMapping(getAPICMapping(0), 240, 0);// map legacy pit interrupt to 240
     LocalAPIC::enable();
     LocalAPIC::setupSleep();
     SharedInterrupt::init();
@@ -109,7 +109,7 @@ void kern_start() {
 
     uint64_t count = Device::getDeviceCount();
 
-    if(count == 0) {
+    if (count == 0) {
         kout << "No devices found\n";
         asm("hlt");
     }

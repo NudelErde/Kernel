@@ -3,21 +3,21 @@
 
 namespace Kernel {
 
-    extern "C" void __forceReloadEnter() {
-        Thread::getCurrent()->setEnterIPM();
-        Thread::toKernel();
-    }
+extern "C" void __forceReloadEnter() {
+    Thread::getCurrent()->setEnterIPM();
+    Thread::toKernel();
+}
 
-    extern "C" void __forceReloadExit() {
-        Thread::getCurrent()->setExitIPM();
-        Thread::toKernel();
-    }
+extern "C" void __forceReloadExit() {
+    Thread::getCurrent()->setExitIPM();
+    Thread::toKernel();
+}
 
-    extern "C" uint64_t __switchToImpl(uint64_t* threadPidPointer, uint64_t targetPid, uint64_t* argPointer, uint64_t argCount, uint64_t functionAddress);
-    
-    uint64_t InterProcessMethod::switchTo(uint64_t* argPointer, uint64_t targetPid) {
-        return __switchToImpl(&Thread::getCurrent()->pid, targetPid, argPointer, (uint64_t)argCount, address);
-    }
+extern "C" uint64_t __switchToImpl(uint64_t* threadPidPointer, uint64_t targetPid, uint64_t* argPointer, uint64_t argCount, uint64_t functionAddress);
+
+uint64_t InterProcessMethod::switchTo(uint64_t* argPointer, uint64_t targetPid) {
+    return __switchToImpl(&Thread::getCurrent()->pid, targetPid, argPointer, (uint64_t) argCount, address);
+}
 
 asm(R"(
 __switchToImpl:
@@ -120,4 +120,4 @@ __switchToImpl:
     ret
 )");
 
-}
+}// namespace Kernel

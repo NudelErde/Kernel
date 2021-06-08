@@ -3,7 +3,7 @@
 
 namespace Kernel {
 
-class Device{
+class Device {
 public:
     virtual ~Device();
     virtual void read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* dest) = 0;
@@ -17,4 +17,4 @@ public:
     static void setSystemDevice(uint64_t device);
 };
 
-}
+}// namespace Kernel

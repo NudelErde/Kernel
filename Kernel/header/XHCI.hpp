@@ -3,11 +3,10 @@
 
 namespace Kernel {
 
-class XhciUsbController: public USB {
+class XhciUsbController : public USB {
 public:
-
-    XhciUsbController(PCI* dev, const Kernel::PCICommonHeader &header);
+    XhciUsbController(PCI* dev, const Kernel::PCICommonHeader& header);
     void onInterrupt();
 };
 
-}
+}// namespace Kernel
