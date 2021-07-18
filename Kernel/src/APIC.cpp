@@ -77,7 +77,7 @@ void IoAPIC::setMapping(uint8_t interruptNum, uint8_t resultVector, uint8_t cpuI
 static bool localAPICRunning = false;
 void LocalAPIC::endInterrupt() {
     if (localAPICRunning)
-        *(uint32_t volatile*) (localAPICAddress + 0x0B0) = 0x0;// eof
+        *(uint32_t volatile*) (localAPICAddress + 0x0B0) = 0x0;// eoi
 }
 
 void LocalAPIC::enable() {

@@ -1,4 +1,5 @@
 #include "process.hpp"
+#include "BasicIn.hpp"
 #include "FileSystem.hpp"
 #include "IDE.hpp"
 #include "KernelOut.hpp"
@@ -48,7 +49,7 @@ void onProcessSystemCall(uint64_t b, uint64_t c, uint64_t d) {
             Thread::toKernel();
             return;
         case 0x05:
-            *((uint64_t*) d) = (uint64_t) (new uint8_t[c]);
+            *((uint64_t*) d) = (uint64_t) (lastProcess->getHeap().malloc(c));
             return;
         case 0x06:
             delete (uint8_t*) c;
@@ -169,21 +170,15 @@ void onMassStorageSystemCall(uint64_t b, uint64_t c, uint64_t d) {
 void onBasicIOCall(uint64_t b, uint64_t c, uint64_t d) {
     switch (b) {
         case 1: {
-            Serial serial(0x3F8);
-            while (!serial.outputBufferEmpty()) {// todo resource and interrupt stuff
-                current->setWaiting(100);
-                Thread::toKernel();
-            }
-            serial.write(c);
+            kout << (char) c;
         }
             return;
         case 2: {
-            Serial serial(0x3F8);
-            while (serial.inputBufferEmpty()) {// todo resource and interrupt stuff
+            while (Input::isEmpty()) {// todo resource and interrupt stuff
                 current->setWaiting(100);
                 Thread::toKernel();
             }
-            *((uint8_t*) c) = serial.read();
+            *((uint8_t*) c) = Input::readBlocking();
         }
             return;
         default:
@@ -276,21 +271,9 @@ void onEXT4Syscall(uint64_t b, uint64_t c, uint64_t d) {
 }
 
 extern "C" void onSystemCall(uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
-    switch (a) {
-        case 1:
-            onProcessSystemCall(b, c, d);
-            break;
-        case 2:
-            onMassStorageSystemCall(b, c, d);
-            break;
-        case 3:
-            onBasicIOCall(b, c, d);
-            break;
-        case 4:
-            onEXT4Syscall(b, c, d);
-            break;
-        default:
-            break;
+    if (a <= 4 && a >= 1) {
+        constexpr void (*functions[])(uint64_t, uint64_t, uint64_t){onProcessSystemCall, onMassStorageSystemCall, onBasicIOCall, onEXT4Syscall};
+        functions[a - 1](b, c, d);
     }
 }
 
@@ -464,6 +447,20 @@ void Process::addProcessToSharedMemoryPage(uint64_t sharedMemoryId, uint64_t oth
     }
 }
 
+void Process::unload() {
+    for (uint64_t i = 0; i < count; ++i) {
+        if (programPages[i].checkIfMapped()) {
+            programPages[i].unmap();
+        }
+    }
+    for (uint64_t i = 0; i < maxSharedPages; ++i) {
+        if (sharedPages[i].sharedPageId && sharedPages[i].pageBuffer.page.checkIfMapped()) {
+            sharedPages[i].pageBuffer.page.unmap();
+        }
+    }
+    heap.unmap();
+}
+
 void Process::reload() {
     for (uint64_t i = 0; i < count; ++i) {
         programPages[i].remap();
@@ -489,7 +486,7 @@ Thread::Thread(MemoryPage stack[stackPageCount], uint64_t currentCodeAddress, ui
     for (uint8_t i = 0; i < stackPageCount; ++i) {
         new (Thread::stack + i) MemoryPage((MemoryPage &&) stack[i]);
     }
-    Thread::stackAddress = stack[stackPageCount - 1].getVirtualAddress() + pageSize - 1;
+    Thread::stackAddress = Thread::stack[stackPageCount - 1].getVirtualAddress() + pageSize - 8;
     Thread::currentCodeAddress = currentCodeAddress;
     Thread::pid = pid;
     Thread::tid = ++nextTid;
@@ -520,10 +517,10 @@ void Thread::toProcess() {
     if (debugOnStart) {
         debugOnStart = false;
         KTODO("process debugging");
-        Debug::setBreakpoint(3, currentCodeAddress, Debug::Condition::Execute, []() {kout << "Stuff\n"; return false; });
+        Debug::setBreakpoint(3, currentCodeAddress, Debug::Condition::Execute, [](uint64_t interruptStackBase) {kout << "Stuff\n"; return false; });
     }
     asm(R"(
-    mov %0, %%rax
+    mov %0, %%rdi
     mov %1, %%rdx
     mov %2, %%rbx
     call __process_toProcess
@@ -553,6 +550,7 @@ void Thread::toKernel() {
         : "rax", "rdx");
 }
 
-extern "C" __attribute__((interrupt)) void onSystemCallExit(void* stackframe) {}
+extern "C" __attribute__((interrupt)) void onSystemCallExit(void* stackframe) {
+}
 
 }// namespace Kernel

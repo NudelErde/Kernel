@@ -1,5 +1,7 @@
 #pragma once
+#include "VideoTextField.hpp"
 #include "serial.hpp"
+#include "util.hpp"
 #include <stdint.h>
 
 #define KTODO(name) ::Kernel::kout << "TODO: " << name << " in " << __FILE__ << ':' << (uint64_t) __LINE__ << '\n';
@@ -13,6 +15,7 @@ class KernelOutSetDisplay;
 
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetSerial& koss);
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetDisplay& kosd);
+Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::VideoTextField& vtf);
 
 namespace Kernel {
 
@@ -42,9 +45,19 @@ private:
 
 KernelOutSetDisplay setDisplay();
 
+class KernelOutSetRingBuffer {
+private:
+    friend KernelOutSetRingBuffer setRingBuffer();
+};
+
+KernelOutSetRingBuffer setRingBuffer();
+
 class KernelOut {
 public:
     static void init();
+    static char* getRingBufferCurrent();
+    static char* getRingBufferMin();
+    static char* getRingBufferMax();
 
     KernelOut();
     void print(char c);
@@ -52,10 +65,17 @@ public:
 
     friend Kernel::KernelOut& ::operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetSerial& koss);
     friend Kernel::KernelOut& ::operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetDisplay& kosd);
+    friend Kernel::KernelOut& ::operator<<(Kernel::KernelOut& out, const Kernel::VideoTextField& vtf);
 
 private:
-    bool isVGA;
+    enum class OutputMode {
+        Serial,
+        VideoText,
+        VideoTextField,
+    };
+    OutputMode mode;
     Serial serial;
+    VideoTextField videoTextField;
 };
 
 struct Hex {

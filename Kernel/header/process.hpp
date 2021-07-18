@@ -123,6 +123,7 @@ public:
     ~Process();
 
     void reload();
+    void unload();
 
     uint64_t createSharedMemoryPage();
     void useSharedMemoryPage(uint64_t sharedMemoryId);

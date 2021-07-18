@@ -6,11 +6,12 @@
 #include "interrupt.hpp"
 #include "kernelMem.hpp"
 #include "process.hpp"
+#include "units.hpp"
 #include "wait.hpp"
 
 namespace Kernel {
 
-static constexpr uint64_t maxProcessTime = 3000;
+static constexpr uint64_t maxProcessTime = 300000;
 static constexpr uint64_t maxProcessCount = 16;
 
 static uint64_t currentRelativeTime;
@@ -130,7 +131,7 @@ void Scheduler::run() {
 
         bool cont = true;
         Process* proc = nullptr;
-        ;
+
         LinkedList<Process>::Iterator procIter = processList->getIterator();
         for (; procIter.valid() && cont; cont = procIter.next()) {
             if (procIter.get()->getPID() == currentThread->getPID()) {
@@ -153,11 +154,12 @@ void Scheduler::run() {
             if (currentThread->getEarliestSchedule() > currentRelativeTime) {
                 continue;// continue doesn't stop the timer -> next iteration should have different relative time
             }
-            Process* procPtr = new (staticProcessBuffer) Process((Process &&) * proc);
-            procPtr->reload();
+            //Process* procPtr = new (staticProcessBuffer) Process((Process &&) * proc);
+            proc->reload();
             currentThread->reload();
             currentThread->toProcess();
-            new (proc) Process((Process &&) * procPtr);
+            proc->unload();
+            //new (proc) Process((Process &&) * procPtr);
             if (currentThread->exitIPM) {
                 --(proc->threads);
                 currentThread->exitIPM = false;

@@ -1,4 +1,5 @@
 #include "interrupt.hpp"
+#include "APIC.hpp"
 #include "debug.hpp"
 #include "inout.hpp"
 #include "print.hpp"
@@ -216,6 +217,10 @@ void Interrupt::setHardwareInterruptMask(uint8_t irq, bool enable) {
 }
 
 void Interrupt::sendHardwareEOI(uint8_t irq) {
+    LocalAPIC::endInterrupt();
+
+    if (irq >= 240)
+        irq -= 240;
     if (irq > 8) {
         outb(0xA0, 0x20);
     }

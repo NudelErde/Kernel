@@ -10,7 +10,7 @@
 namespace Kernel {
 
 static uint64_t lastBarVirtualAddress;
-constexpr uint64_t barVirtualAddressStart = 10 * 1024Gi;
+constexpr uint64_t barVirtualAddressStart = 10Ti;
 
 void PCI::BAR::setup(PCI* pci, uint8_t barID) {
     if (lastBarVirtualAddress == 0) {
@@ -25,16 +25,17 @@ void PCI::BAR::setup(PCI* pci, uint8_t barID) {
     if (bar & 0b1) {
         io = true;
         address = bar & ~0b11;
+        BAR::size = 0;
     } else {
         io = false;
-        uint8_t type = (uint8_t) ((bar >> 1) & 0b11);
+        type = (uint8_t) ((bar >> 1) & 0b11);
         address = (bar & ~0b1111);
-        uint32_t size = 0;
         pci->writeConfig(0x10 + barID * 4, ~0);
-        size = pci->readConfig(0x10 + barID * 4);
+        uint32_t size = pci->readConfig(0x10 + barID * 4);
         pci->writeConfig(0x10 + barID * 4, bar);
         size = ~size;
         size += 1;
+        BAR::size = size;
         if (type == 0x02) {
             // 64 bit register
             uint64_t addressH = pci->readConfig(0x10 + (barID + 1) * 4);
@@ -69,7 +70,7 @@ void PCI::BAR::write8(uint32_t offset, uint8_t data) {
     if (io) {
         outb(address + offset, data);
     } else {
-        *(uint8_t*) (virtualAddress + offset) = data;
+        *(volatile uint8_t*) (virtualAddress + offset) = data;
     }
 }
 void PCI::BAR::write16(uint32_t offset, uint16_t data) {
@@ -78,7 +79,7 @@ void PCI::BAR::write16(uint32_t offset, uint16_t data) {
     if (io) {
         out16(address + offset, data);
     } else {
-        *(uint16_t*) (virtualAddress + offset) = data;
+        *(volatile uint16_t*) (virtualAddress + offset) = data;
     }
 }
 void PCI::BAR::write32(uint32_t offset, uint32_t data) {
@@ -87,7 +88,17 @@ void PCI::BAR::write32(uint32_t offset, uint32_t data) {
     if (io) {
         outl(address + offset, data);
     } else {
-        *(uint32_t*) (virtualAddress + offset) = data;
+        *(volatile uint32_t*) (virtualAddress + offset) = data;
+    }
+}
+void PCI::BAR::write64(uint32_t offset, uint64_t data) {
+    if (!valid)
+        return;
+    if (io) {
+        outl(address + offset, (uint32_t) (data & 0xFFFFFFFF));
+        outl(address + offset, (uint32_t) ((data >> 32) & 0xFFFFFFFF));
+    } else {
+        *(volatile uint64_t*) (virtualAddress + offset) = data;
     }
 }
 uint8_t PCI::BAR::read8(uint32_t offset) {
@@ -96,7 +107,7 @@ uint8_t PCI::BAR::read8(uint32_t offset) {
     if (io) {
         return inb(address + offset);
     } else {
-        return *(uint8_t*) (virtualAddress + offset);
+        return *(volatile uint8_t*) (virtualAddress + offset);
     }
 }
 uint16_t PCI::BAR::read16(uint32_t offset) {
@@ -105,7 +116,7 @@ uint16_t PCI::BAR::read16(uint32_t offset) {
     if (io) {
         return in16(address + offset);
     } else {
-        return *(uint16_t*) (virtualAddress + offset);
+        return *(volatile uint16_t*) (virtualAddress + offset);
     }
 }
 uint32_t PCI::BAR::read32(uint32_t offset) {
@@ -114,7 +125,18 @@ uint32_t PCI::BAR::read32(uint32_t offset) {
     if (io) {
         return inl(address + offset);
     } else {
-        uint32_t value = *(uint32_t*) (virtualAddress + offset);
+        uint32_t value = *(volatile uint32_t*) (virtualAddress + offset);
+        return value;
+    }
+}
+
+uint64_t PCI::BAR::read64(uint32_t offset) {
+    if (!valid)
+        return 0;
+    if (io) {
+        return inl(address + offset) | (uint64_t) inl(address + offset + 4) << 32;
+    } else {
+        uint64_t value = *(volatile uint64_t*) (virtualAddress + offset);
         return value;
     }
 }

@@ -16,7 +16,10 @@ long_mode_start:
     mov ss, ax
 
 	call __kernel_main
+.dead:
+    cli
     hlt
+    jmp .dead
 
 section .bss
 align 4096

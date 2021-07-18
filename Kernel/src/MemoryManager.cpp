@@ -46,6 +46,18 @@ MemoryManager::~MemoryManager() {
     }
 }
 
+void MemoryManager::unmap() {
+    if (activeHeap == this) {
+        activeHeap = &getKernelMemoryManager();
+    }
+
+    for (PageListNode* current = lastPageNode; current; current = current->prev) {
+        if (current->page.isValid() && current->page.checkIfMapped()) {
+            current->page.unmap();
+        }
+    }
+}
+
 void MemoryManager::reload() {
     activeHeap = this;
     for (PageListNode* ptr = &firstPageNode; ptr; ptr = ptr->next) {

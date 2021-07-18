@@ -1,4 +1,5 @@
 #include "debug.hpp"
+#include "BasicIn.hpp"
 #include "KernelOut.hpp"
 #include "interrupt.hpp"
 #include "process.hpp"
@@ -63,7 +64,7 @@ Kernel::KernelOut& operator<<(Kernel::KernelOut& out, PrintSegment ps) {
 namespace Kernel {
 
 static struct {
-    typedef bool (*Callback)();
+    typedef bool (*Callback)(uint64_t);
 
     Callback callbacks[6];// index 4 is single step; index 5 is breakpoint instruction
 } data;
@@ -74,24 +75,23 @@ void onInvalidOpcode(const Interrupt& i) {
     asm("hlt");
 }
 
-static bool tryHandle(const Interrupt& i, uint8_t number) {
+static bool tryHandle(const Interrupt& i, uint8_t number, uint64_t interruptStackBase) {
     if (number < 4) {
         if (data.callbacks[number]) {
-            if (data.callbacks[number]()) {
+            if (data.callbacks[number](interruptStackBase)) {
                 Debug::removeBreakpoint(number);
                 return true;
             }
         }
     } else if (number == 4) {
         if (data.callbacks[number]) {
-            if (data.callbacks[number]()) {
-                ((uint64_t*) i.stackFrame)[2] &= ~0x100;
+            if (data.callbacks[number](interruptStackBase)) {
                 return true;
             }
         }
     } else if (number == 5) {
         if (data.callbacks[number]) {
-            if (data.callbacks[number]()) {
+            if (data.callbacks[number](interruptStackBase)) {
                 return true;
             }
         }
@@ -100,10 +100,10 @@ static bool tryHandle(const Interrupt& i, uint8_t number) {
 }
 
 void onBreakpoint(const Interrupt& i) {
-    if (!tryHandle(i, 5)) {
+    if (!tryHandle(i, 5, (uint64_t) i.stackFrame)) {
         kout << "On int3 breakpoint\n";
         Debug::printDebugInfo(i.stackFrame);
-        ((uint64_t*) i.stackFrame)[2] |= 0x100;
+        //((uint64_t*) i.stackFrame)[2] |= 0x100;
     }
 }
 
@@ -113,19 +113,19 @@ void onDebug(const Interrupt& i) {
     asm("mov %%dr6, %0"
         : "=g"(dr6)::);
     if (dr6 & 0b1 << 0) {
-        handled |= tryHandle(i, 0);
+        handled |= tryHandle(i, 0, (uint64_t) i.stackFrame);
     }
     if (dr6 & 0b1 << 1) {
-        handled |= tryHandle(i, 1);
+        handled |= tryHandle(i, 1, (uint64_t) i.stackFrame);
     }
     if (dr6 & 0b1 << 2) {
-        handled |= tryHandle(i, 2);
+        handled |= tryHandle(i, 2, (uint64_t) i.stackFrame);
     }
     if (dr6 & 0b1 << 3) {
-        handled |= tryHandle(i, 3);
+        handled |= tryHandle(i, 3, (uint64_t) i.stackFrame);
     }
     if (dr6 & 0b1 << 14) {
-        handled |= tryHandle(i, 4);
+        handled |= tryHandle(i, 4, (uint64_t) i.stackFrame);
     }
     dr6 &= 0b1111 | (0b111 << 13);
     asm("mov %0, %%dr6" ::"a"(dr6)
@@ -147,6 +147,32 @@ void Debug::init() {
     Interrupt::setHandler(3, onBreakpoint);
     Interrupt::setHandler(1, onDebug);
     Interrupt::setHandler(33, onPureVirtual);
+}
+
+uint64_t Debug::getRSP(void* interruptStack) {
+    return ((uint64_t*) interruptStack)[3];
+}
+uint64_t Debug::getRIP(void* interruptStack) {
+    return ((uint64_t*) interruptStack)[0];
+}
+
+void Debug::printStackTrace() {
+    kout << "Stack Trace: \n";
+    uint64_t rbp = ~0;
+    asm(R"(
+        mov %%rbp, %0
+    )"
+        : "=a"(rbp));
+    bool mapped = MemoryPage::getPhysicalAddressFromVirtual(rbp) != 0 && MemoryPage::getPhysicalAddressFromVirtual(rbp + 8) != 0;
+    while (mapped) {
+        uint64_t rip = *(uint64_t*) (rbp + 8);
+        rbp = *(uint64_t*) (rbp);
+        kout << "RIP: " << Hex(rip, 8) << " | ";
+        kout << "RBP: " << PrintPointer(rbp) << '\n';
+        if (rip == 0)
+            return;
+        mapped = MemoryPage::getPhysicalAddressFromVirtual(rbp) != 0 && MemoryPage::getPhysicalAddressFromVirtual(rbp + 8) != 0;
+    }
 }
 
 void Debug::removeBreakpoint(uint8_t debugNum) {
@@ -183,7 +209,11 @@ void Debug::removeBreakpoint(uint8_t debugNum) {
     data.callbacks[debugNum] = nullptr;
 }
 
-void Debug::setBreakpoint(uint8_t debugNum, uint64_t address, Condition c, bool (*callback)()) {
+void Debug::setCallback(uint8_t debugNum, bool (*callback)(uint64_t)) {
+    data.callbacks[debugNum] = callback;
+}
+
+void Debug::setBreakpoint(uint8_t debugNum, uint64_t address, Condition c, bool (*callback)(uint64_t)) {
     constexpr uint64_t debugExtensionBit = 0b1 << 3;
     uint64_t cr4;
     asm("mov %%cr4, %0"
@@ -225,10 +255,7 @@ void Debug::setBreakpoint(uint8_t debugNum, uint64_t address, Condition c, bool 
 }
 
 uint8_t readChar() {
-    Serial s(0x3F8);
-    while (s.inputBufferEmpty())
-        ;
-    return s.read();
+    return Input::readBlocking();
 }
 
 uint64_t readHex() {
@@ -293,7 +320,7 @@ static void stackRead(uint64_t base, uint64_t instruction) {
             kout << "Offset: 0x";
             uint64_t offset = readHex();
             kout << '\n';
-            kout << "Value: 0x " << Hex(*((uint64_t*) (base - offset))) << '\n';
+            kout << "Value: 0x" << Hex(*((uint64_t*) (base - offset))) << '\n';
         }
         if (ch == 'u' || ch == 'U') {
             return;
@@ -304,7 +331,7 @@ static void stackRead(uint64_t base, uint64_t instruction) {
 static void interactive(uint64_t base, uint64_t instruction) {
     while (true) {
         while (true) {
-            kout << "Memory (m), Stack (s)";
+            kout << "Memory (m), Stack (s), Exit (e)";
             uint8_t ch = readChar();
             kout << '\n';
             if (ch == 'm' || ch == 'M') {
@@ -312,6 +339,9 @@ static void interactive(uint64_t base, uint64_t instruction) {
             }
             if (ch == 's' || ch == 'S') {
                 stackRead(base, instruction);
+            }
+            if (ch == 'e' || ch == 'E') {
+                return;
             }
         }
     }

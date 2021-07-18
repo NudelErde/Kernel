@@ -1,5 +1,7 @@
 #include "memory.hpp"
 #include "KernelOut.hpp"
+#include "VGA.hpp"
+#include "debug.hpp"
 #include "print.hpp"
 #include "serial.hpp"
 #include "stddef.h"
@@ -78,7 +80,17 @@ static void fillMemoryInfo(MemoryInfo* mem, uint64_t& lastPageID, uint64_t base_
     mem->pageIndexStart = lastPageID;
 }
 
+struct BiosBootDevice {
+    uint32_t biosdevice;
+    uint32_t partition;
+    uint32_t subpartition;
+};
+BiosBootDevice biosBootDevice;
+uint32_t imageBaseAddress;
+
 void get_multiboot_infos() {
+    rsdtPointer = 0;
+    xsdtPointer = 0;
     struct TagStructure {
         uint32_t total_size;
         uint32_t reserved;
@@ -96,20 +108,21 @@ void get_multiboot_infos() {
     TagStructure head = *(TagStructure*) (void*) (size_t) tagsPointer;
     tagsPointer += sizeof(head);
 
+    kout << "Tags: ";
+
     for (uint32_t remainingSize = head.total_size; remainingSize;) {
         BasicTag* tag = (BasicTag*) (void*) (size_t) tagsPointer;
         tagsPointer += realign(tag->size);
         remainingSize -= realign(tag->size);
-
-        if (tag->type == 14) {
+        kout << Hex(tag->type) << ", ";
+        if (tag->type == 0xE) {
             RSDPDescriptor* desc = (RSDPDescriptor*) (((uint32_t*) tag) + 2);
             if (basicStrEq(desc->Signature, "RSD PTR ", 8)) {
                 rsdtPointer = (uint64_t) (desc->RsdtAddress & 0xFFFFFFFF);
             } else {
                 kout << "Error while reading RSDPDescriptor\n";
             }
-        } else if (tag->type == 15) {
-
+        } else if (tag->type == 0xF) {
             RSDPDescriptor20* desc = (RSDPDescriptor20*) (((uint32_t*) tag) + 2);
             if (basicStrEq(desc->firstPart.Signature, "RSD PTR ", 8)) {
                 rsdtPointer = (uint64_t) (desc->firstPart.RsdtAddress & 0xFFFFFFFF);
@@ -118,7 +131,7 @@ void get_multiboot_infos() {
                 kout << "Error while reading XSDPDescriptor\n";
             }
 
-        } else if (tag->type == 6) {
+        } else if (tag->type == 0x6) {
             uint32_t tagSize = tag->size;
             uint32_t* data = ((uint32_t*) tag) + 2;
             uint32_t entrySize = data[0];
@@ -181,11 +194,35 @@ void get_multiboot_infos() {
                     }
                 }
             }
+        } else if (tag->type == 0x8) {
+            VGA::readFrameBufferInfo((uint8_t*) tag);
+        } else if (tag->type == 0x5) {
+            biosBootDevice.biosdevice = ((uint32_t*) tag)[2];
+            biosBootDevice.partition = ((uint32_t*) tag)[3];
+            biosBootDevice.subpartition = ((uint32_t*) tag)[4];
+        } else if (tag->type == 0x4) {
+            //ignore basic memory information
+        } else if (tag->type == 0x9) {
+            //TODO: advanced debug information with elf symbols
+        } else if (tag->type == 0xA) {
+            // APM only useable in 32 bit mode
+        } else if (tag->type == 0x2) {
+            kout << "Using bootloader: " << ((char*) tag) + 8 << '\n';
+        } else if (tag->type == 0x1) {
+            kout << "Boot command: " << ((char*) tag) + 8 << '\n';
+        } else if (tag->type == 0x11) {
+            //efi memory map
+        } else if (tag->type == 0x15) {
+            imageBaseAddress = ((uint32_t*) tag)[2];
+        } else if (tag->type != 0) {
+            kout << "Unknown Multiboot information structure type: \n";
+            kout << Hex(tag->type) << '\n';
         }
 
         if (tag->type == 0)
             break;
     }
+    kout << '\n';
 }
 
 MemoryInfo* getMemoryInfoPtr() {
@@ -261,8 +298,13 @@ void PhysicalMemoryManagment::init() {
     }
 }
 
-static uint64_t lastUserPage = 0x40000000;//1GiB
+static uint64_t lastUserPage = 0;//1GiB
+static constexpr uint64_t lastUserPageStart = 1Gi;
+
 uint64_t PhysicalMemoryManagment::getFreeUserPage() {
+    if (lastUserPage) {
+        lastUserPage = lastUserPageStart;
+    }
     uint64_t searchStart = lastUserPage;
     lastUserPage += pageSize;
     for (; lastUserPage != searchStart; lastUserPage += pageSize) {
@@ -289,6 +331,22 @@ uint64_t PhysicalMemoryManagment::getFreeKernelPage() {
         }
     }
     return 0;
+}
+
+static bool lastArea = 0;
+uint64_t PhysicalMemoryManagment::getAnyPage() {
+    lastArea != lastArea;
+    uint64_t result;
+    if (lastArea) {
+        result = getFreeUserPage();
+        if (result == 0)
+            result = getFreeKernelPage();
+    } else {
+        result = getFreeKernelPage();
+        if (result == 0)
+            result = getFreeUserPage();
+    }
+    return result;
 }
 
 uint64_t MemoryPage::getPhysicalAddressFromVirtual(uint64_t address) {
@@ -343,8 +401,11 @@ MemoryPage::MemoryPage(uint64_t physicalAddress, bool unsafe) {
 
 MemoryPage::~MemoryPage() {
     if (destruct) {
-        unmap();
-        PhysicalMemoryManagment::setUsed(physicalAddress, false);
+        if (checkIfMapped()) {// only destruct if mapped
+            unmap();
+            PhysicalMemoryManagment::setUsed(physicalAddress, false);
+        }
+        destruct = false;
     }
 }
 
@@ -437,14 +498,6 @@ void MemoryPage::remap() {
 void MemoryPage::unmap() {
     entry->flags.present = false;
     reloadPageTables((uint64_t) entry);
-}
-
-bool MemoryPage::isValid() {
-    return valid;
-}
-
-uint64_t MemoryPage::getVirtualAddress() {
-    return virtualAddress;
 }
 
 uint64_t MemoryPage::createNewPageTable() {

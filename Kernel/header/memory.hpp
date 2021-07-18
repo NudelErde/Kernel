@@ -50,6 +50,7 @@ public:
 
     static uint64_t getFreeUserPage();
     static uint64_t getFreeKernelPage();
+    static uint64_t getAnyPage();
 };
 
 class MemoryPage {
@@ -69,8 +70,10 @@ public:
     void unmap();
     void softmap(uint64_t virtualAddress, bool writeable, bool userAccess, bool cacheDisable = false, bool writeThrough = false);
 
-    bool isValid();
-    uint64_t getVirtualAddress();
+    [[nodiscard]] inline bool isValid() const { return valid; }
+    [[nodiscard]] inline uint64_t getVirtualAddress() const { return virtualAddress; }
+    [[nodiscard]] inline uint64_t getPhysicalAddress() const { return physicalAddress; }
+    [[nodiscard]] inline uint64_t checkIfMapped() const { return getPhysicalAddressFromVirtual(virtualAddress) == physicalAddress; }
 
     static uint64_t createNewPageTable();
     static uint64_t getPhysicalAddressFromVirtual(uint64_t address);

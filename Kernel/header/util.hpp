@@ -19,11 +19,13 @@ public:
     Container(T&& value) : _value(value) { _hasInit = true; }
 
     Container& operator=(const T& value) {
+        _hasInit = true;
         _value = value;
         return *this;
     }
     Container& operator=(T&& value) {
-        _value = value;
+        _hasInit = true;
+        _value = (T &&) value;
         return *this;
     }
     operator T() { return _value; }

@@ -1,6 +1,7 @@
 #include "ACPI.hpp"
 #include "APIC.hpp"
 #include "KernelOut.hpp"
+#include "PS2.hpp"
 #include "inout.hpp"
 #include "memory.hpp"
 #include "print.hpp"
@@ -10,7 +11,8 @@
 
 namespace Kernel {
 
-static bool basicStrEq(const char* a, const char* b, uint64_t len) {
+static bool
+basicStrEq(const char* a, const char* b, uint64_t len) {
     for (uint64_t index = 0; index < len; ++index) {
         if (a[index] != b[index])
             return false;
@@ -130,6 +132,8 @@ static void readFADT(uint8_t* fadtPointer) {
     } __attribute__((packed));
     FADT* fadt = (FADT*) fadtPointer;
     setCenturyRegister(fadt->Century);
+    if (fadt->BootArchitectureFlags & 2 == 0)
+        PS2::disable();
 }
 
 static uint64_t interruptRedirectionData[16]{};
@@ -187,7 +191,8 @@ static void readAPIC(void* ptr) {
 }
 
 static void processTable(uint64_t table, uint64_t doNotUnmapAddress) {
-    ACPISDTHeader* h = (ACPISDTHeader*) (uint64_t) table;
+    kout << Hex(table) << '\n';
+    ACPISDTHeader* h = (ACPISDTHeader*) table;
     MemoryPage basePage;
     MemoryPage* pages;
     uint8_t allocatedPages = 0;
@@ -196,9 +201,13 @@ static void processTable(uint64_t table, uint64_t doNotUnmapAddress) {
         allocatedPages = 1;
         basePage = MemoryPage(table, true);
         basePage.mapTo(table, true, false);
-        if (basePage.getVirtualAddress() != (table & ~0xFFFu)) {
-            kout << "Error while mapping BasePage in ACPI processing";
-            asm("hlt");
+        uint64_t expectedAddress = table & (~(pageSize - 1));
+        if (basePage.getVirtualAddress() != expectedAddress) {
+            kout << "Error while mapping BasePage in ACPI processing\n";
+            kout << "Virtual address:  0x" << Hex(basePage.getVirtualAddress()) << '\n';
+            kout << "Expected address: 0x" << Hex(expectedAddress) << '\n';
+            kout << "TablePointer:      0x" << Hex(table) << '\n';
+            asm("cli\nhlt");
         }
 
         uint64_t last = table + h->Length;
@@ -207,8 +216,8 @@ static void processTable(uint64_t table, uint64_t doNotUnmapAddress) {
         allocatedPages += (lastPageStart - firstPageStart) / pageSize;
 
         if (allocatedPages * sizeof(MemoryPage) > pageSize) {
-            kout << "Table can not be allocated to virtual memory";
-            asm("hlt");
+            kout << "Table can not be allocated to virtual memory\n";
+            asm("cli\nhlt");
         }
         uint64_t freePage = PhysicalMemoryManagment::getFreeKernelPage();
         PhysicalMemoryManagment::setUsed(freePage, true);
@@ -218,12 +227,12 @@ static void processTable(uint64_t table, uint64_t doNotUnmapAddress) {
             uint64_t address = index * pageSize + firstPageStart;
             pages[index - 1] = MemoryPage(address, true);
             pages[index - 1].mapTo(address, true, false);
-            if (pages[index - 1].getVirtualAddress() != (address & ~0xFFFu)) {
+            if (pages[index - 1].getVirtualAddress() != (address & (~(pageSize - 1)))) {
                 kout << "Error while mapping BasePage of ";
                 for (uint8_t i = 0; i < 4; ++i) {
                     kout << h->Signature[i];
                 }
-                asm("hlt");
+                asm("cli\nhlt");
             }
         }
     }
@@ -248,57 +257,90 @@ static void processTable(uint64_t table, uint64_t doNotUnmapAddress) {
     }
 }
 
-static void readRSDT(uint8_t* rsdtPointer) {
+static bool readRSDT(uint8_t* rsdtPointer) {
     bool pageUsed = false;
     MemoryPage rsdtPage;
 
     if ((uint64_t) rsdtPointer > 0x40000000) {
         pageUsed = true;
         rsdtPage = MemoryPage((uint64_t) rsdtPointer, true);
-        rsdtPage.mapTo((uint64_t) rsdtPointer, true, false);
-        if (rsdtPage.getVirtualAddress() != ((uint64_t) rsdtPointer & ~0xFFFu)) {
+        bool mapped = rsdtPage.mapTo((uint64_t) rsdtPointer, true, false);
+        uint64_t expectedAddress = ((uint64_t) rsdtPointer) & (~(pageSize - 1));
+        if (!mapped || rsdtPage.getVirtualAddress() != expectedAddress) {
             kout << "Could not map RSDT in virtual memory\n";
-            asm("hlt");
+            kout << "Virtual address:  0x" << Hex(rsdtPage.getVirtualAddress()) << '\n';
+            kout << "Expected address: 0x" << Hex(expectedAddress) << '\n';
+            kout << "RsdtPointer:      0x" << Hex(rsdtPointer) << '\n';
+            asm("cli\nhlt");
         }
     }
     ACPISDTHeader* header = (ACPISDTHeader*) rsdtPointer;
     uint64_t entryCount = (header->Length - sizeof(ACPISDTHeader)) / sizeof(uint32_t);
+    if ((*(uint32_t*) rsdtPointer) != 'TDSR' && (*(uint32_t*) rsdtPointer) != 'TDSX') {
+        kout << "RSDT 0x" << Hex(rsdtPointer) << '\n'
+             << HexDump(rsdtPointer, sizeof(ACPISDTHeader)) << '\n';
+        return false;
+    }
     for (uint64_t i = 0; i < entryCount; ++i) {
         uint32_t otherTable = *(uint32_t*) (rsdtPointer + sizeof(ACPISDTHeader) + i * sizeof(uint32_t));
         processTable(otherTable, ((uint64_t) rsdtPointer) & ~0xFFFu);
     }
     if (pageUsed)
         rsdtPage.unmap();
+    return true;
 }
 
-static void readXSDT(uint8_t* xsdtPointer) {
+static bool readXSDT(uint8_t* xsdtPointer) {
     bool pageUsed = false;
     MemoryPage rsdtPage;
 
     if ((uint64_t) xsdtPointer > 0x40000000) {
         pageUsed = true;
         rsdtPage = MemoryPage((uint64_t) xsdtPointer, true);
-        rsdtPage.mapTo((uint64_t) xsdtPointer, true, false);
-        if (rsdtPage.getVirtualAddress() != ((uint64_t) xsdtPointer & ~0xFFFu)) {
+        bool mapped = rsdtPage.mapTo((uint64_t) xsdtPointer, true, false);
+        uint64_t expectedAddress = ((uint64_t) xsdtPointer) & (~(pageSize - 1));
+        if (!mapped || rsdtPage.getVirtualAddress() != expectedAddress) {
             kout << "Could not map RSDT in virtual memory\n";
-            asm("hlt");
+            kout << "Virtual address:  0x" << Hex(rsdtPage.getVirtualAddress()) << '\n';
+            kout << "Expected address: 0x" << Hex(expectedAddress) << '\n';
+            kout << "RsdtPointer:      0x" << Hex(xsdtPointer) << '\n';
+            asm("cli\nhlt");
         }
     }
     ACPISDTHeader* header = (ACPISDTHeader*) xsdtPointer;
     uint64_t entryCount = (header->Length - sizeof(ACPISDTHeader)) / sizeof(uint64_t);
+    if ((*(uint32_t*) xsdtPointer) != 'TDSR' && (*(uint32_t*) xsdtPointer) != 'TDSX') {
+        kout << "XSDT 0x" << Hex(xsdtPointer) << '\n'
+             << HexDump(xsdtPointer, sizeof(ACPISDTHeader)) << '\n';
+        return false;
+    }
     for (uint64_t i = 0; i < entryCount; ++i) {
         uint64_t otherTable = *(uint64_t*) (xsdtPointer + sizeof(ACPISDTHeader) + i * sizeof(uint64_t));
-        processTable(otherTable, ((uint64_t) xsdtPointer) & ~0xFFFu);
+        processTable(otherTable, ((uint64_t) xsdtPointer) & (~(pageSize - 1)));
     }
     if (pageUsed)
         rsdtPage.unmap();
+    return true;
 }
 
 void readACPITables() {
-    if (getXSDTPointer())
-        readXSDT((uint8_t*) getXSDTPointer());
-    else if (getRSDTPointer())
-        readRSDT((uint8_t*) getRSDTPointer());
+    uint64_t xsdt = getXSDTPointer();
+    uint64_t rsdt = getRSDTPointer();
+    if (xsdt) {
+        if (readXSDT((uint8_t*) xsdt)) {
+            return;
+        }
+    }
+    if (rsdt) {
+        if (readRSDT((uint8_t*) rsdt)) {
+            return;
+        }
+    }
+
+    kout << "No valid acpi table fonund\n";
+    kout << "XSDT: 0x" << Hex(xsdt) << '\n';
+    kout << "RSDT: 0x" << Hex(rsdt) << '\n';
+    asm("cli\nhlt\n");
 }
 
 }// namespace Kernel

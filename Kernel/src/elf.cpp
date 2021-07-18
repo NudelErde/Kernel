@@ -90,7 +90,7 @@ struct ProgramEntry {
 
 static_assert(sizeof(ProgramEntry) == 56);
 
-constexpr uint64_t tempMap = (100 * 1024Gi);
+constexpr uint64_t tempMap = 100Ti;
 
 uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint64_t parentPid, bool loadWithDebug) {
     uint64_t inodeNum = ext.findFileINode(str);
@@ -157,7 +157,7 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
             return false;// low memory is used by kernel
         }
 
-        uint64_t k = 0;
+        uint64_t currentTargetMemoryAddress = 0;
         if (entry.memoryOffset % pageSize) {// not page aligned
             bool pageAlreadyExists = false;
 
@@ -176,26 +176,26 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
                 programPagesPermissions[pagesIndex] |= entry.flags;
                 programPages[pagesIndex++].mapTo(base + tempMap, true, true);// offset by 1TiB in virtual memory to avoid collision with stack
             }
-            k = pageSize - entry.memoryOffset % pageSize;
+            currentTargetMemoryAddress = pageSize - entry.memoryOffset % pageSize;
         }
-        for (; k < entry.memorySize; k += pageSize) {
+        for (; currentTargetMemoryAddress < entry.memorySize; currentTargetMemoryAddress += pageSize) {
             new (programPages + pagesIndex) MemoryPage(PhysicalMemoryManagment::getFreeUserPage());// in place construct
             programPagesPermissions[pagesIndex] |= entry.flags;
-            programPages[pagesIndex++].mapTo(k + entry.memoryOffset + tempMap, true, true);// offset by 1TiB in virtual memory to avoid collision with stack
+            programPages[pagesIndex++].mapTo(currentTargetMemoryAddress + entry.memoryOffset + tempMap, true, true);// offset by 1TiB in virtual memory to avoid collision with stack
         }
 
-        if (highestAddress < k + entry.memoryOffset) {
-            highestAddress = k + entry.memoryOffset;
+        if (highestAddress < currentTargetMemoryAddress + entry.memoryOffset) {
+            highestAddress = currentTargetMemoryAddress + entry.memoryOffset;
         }
 
-        k = entry.memoryOffset + tempMap;
+        currentTargetMemoryAddress = entry.memoryOffset + tempMap;
         fi.setNextAddress(entry.fileOffset);
-        for (uint64_t l = 0; l < entry.fileSize; ++l, ++k) {
+        for (uint64_t l = 0; l < entry.fileSize; ++l, ++currentTargetMemoryAddress) {
             uint8_t data = fi.get();
-            *((uint8_t*) k) = data;// load data from file
+            *((volatile uint8_t*) currentTargetMemoryAddress) = data;// load data from file
         }
         if (entry.fileSize < entry.memorySize) {
-            memset((uint8_t*) k, 0, entry.memorySize - entry.fileSize);// fill the rest with 0
+            memset((uint8_t*) currentTargetMemoryAddress, 0, entry.memorySize - entry.fileSize);// fill the rest with 0
         }
     }
     for (uint64_t iter = 0; iter < pagesIndex; ++iter) {
@@ -210,11 +210,12 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
 
     // build target stack
 
-    uint64_t stackBase = 1024Gi - ((stackPageCount + 2) * pageSize);
+    uint64_t stackBase = 1Ti - ((stackPageCount + 2) * pageSize);
     MemoryPage stack[stackPageCount];
     for (uint8_t i = 0; i < stackPageCount; ++i) {
+        uint64_t vstack = stackBase + (i * pageSize);
         new (stack + i) MemoryPage(PhysicalMemoryManagment::getFreeUserPage());
-        stack[i].softmap(stackBase + (i * pageSize), true, true);
+        stack[i].softmap(vstack, true, true);
     }
 
     // build target heap
@@ -243,10 +244,12 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
     Thread thread(stack, header.entryPoint, proc.getPID(), loadWithDebug);
     char* argumentOnHeap = (char*) proc.getHeap().malloc(argsSize);
 
-    char buffer[128];
+    constexpr uint64_t copyBufferSize = 128;
+    char buffer[copyBufferSize];
     uint64_t copyIndex = 0;
 
     while (argsSize) {// copy from source to process memory
+        //load source env
         if (Thread::isInProgram()) {
             Process::getLastLoadedProcess()->reload();
             Thread::getCurrent()->reload();
@@ -254,8 +257,8 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
             getKernelMemoryManager().reload();
         }
         uint64_t copyCount = argsSize;
-        if (copyCount > 128) {
-            copyCount = 128;
+        if (copyCount > copyBufferSize) {
+            copyCount = copyBufferSize;
         }
         argsSize -= copyCount;
         memcpy(buffer, arguments + copyIndex, copyCount);
@@ -264,6 +267,12 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
         memcpy(argumentOnHeap + copyIndex, buffer, copyCount);
 
         copyIndex += copyCount;// increment buffer index
+    }
+    if (Thread::isInProgram()) {
+        Process::getLastLoadedProcess()->reload();
+        Thread::getCurrent()->reload();
+    } else {
+        getKernelMemoryManager().reload();
     }
     proc.setArgumentPointer(argumentOnHeap);
     Scheduler::addThread((Thread &&) thread);

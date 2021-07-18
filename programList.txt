@@ -1,0 +1,4 @@
+badsh:startup.elf
+#cat:lib/cat.elf
+ls:lib/ls.elf
+fileSize:lib/fileSize.elf

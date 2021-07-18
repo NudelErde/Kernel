@@ -8,13 +8,44 @@ void KernelOut::init() {
     kout = KernelOut();
 }
 
-KernelOut::KernelOut() : isVGA(true), serial(0) {}
+KernelOut::KernelOut() : mode(OutputMode::VideoText), serial(0) {}
+
+static char ringBuffer[4096];
+static char* currentRingPointer;
+
+static void printToRingBuffer(char ch) {
+    if (currentRingPointer == 0) {
+        currentRingPointer = ringBuffer;
+    }
+    if (currentRingPointer == ringBuffer + sizeof(ringBuffer)) {
+        currentRingPointer++;
+    }
+    *currentRingPointer = ch;
+    currentRingPointer++;
+};
+
+char* KernelOut::getRingBufferCurrent() {
+    return currentRingPointer;
+}
+char* KernelOut::getRingBufferMin() {
+    return ringBuffer;
+}
+char* KernelOut::getRingBufferMax() {
+    return ringBuffer + sizeof(ringBuffer);
+}
 
 void KernelOut::print(char c) {
-    if (isVGA) {
-        Print::print(c);
-    } else {
-        serial.print(c);
+    printToRingBuffer(c);
+    switch (mode) {
+        case OutputMode::VideoText:
+            Print::print(c);
+            break;
+        case OutputMode::Serial:
+            serial.print(c);
+            break;
+        case OutputMode::VideoTextField:
+            videoTextField.print(c);
+            break;
     }
 }
 
@@ -32,6 +63,10 @@ KernelOutSetSerial setSerial(const Serial& serial) {
 
 KernelOutSetDisplay setDisplay() {
     return KernelOutSetDisplay();
+}
+
+KernelOutSetRingBuffer setRingBuffer() {
+    return KernelOutSetRingBuffer();
 }
 };// namespace Kernel
 
@@ -56,12 +91,17 @@ static void printBase(Kernel::KernelOut& out, uint64_t number, uint64_t base, in
 }
 
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetSerial& koss) {
-    out.isVGA = false;
+    out.mode = Kernel::KernelOut::OutputMode::Serial;
     out.serial = koss.serial;
     return out;
 }
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::KernelOutSetDisplay& kosd) {
-    out.isVGA = true;
+    out.mode = Kernel::KernelOut::OutputMode::VideoText;
+    return out;
+}
+Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::VideoTextField& vtf) {
+    out.mode = Kernel::KernelOut::OutputMode::VideoTextField;
+    out.videoTextField = vtf;
     return out;
 }
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, char n) {
@@ -104,15 +144,15 @@ Kernel::KernelOut& operator<<(Kernel::KernelOut& out, uint64_t number) {
 
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, const Kernel::HexDump& dump) {
     using namespace Kernel;
-    kout << "     | ";
+    kout << "    |";
     for (uint8_t i = 0; i < 16; ++i) {
-        kout << "*" << Hex(i) << (i % 16 == 15 ? "\n" : " | ");
+        kout << "*" << Hex(i) << (i % 16 == 15 ? "\n" : "|");
     }
     for (uint16_t i = 0; i < dump.size; ++i) {
         if (i % 16 == 0) {
-            kout << Hex(i, 4) << " | ";
+            kout << Hex(i, 4) << "|";
         }
-        kout << Hex(dump.buffer[i] & 0xFF, 2) << " | ";
+        kout << Hex(dump.buffer[i] & 0xFF, 2) << "|";
         if (i % 16 == 15) {
             for (uint16_t j = i - 15; j <= i; j++) {
                 char ch = (char) dump.buffer[j];

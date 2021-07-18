@@ -13,6 +13,7 @@ public:
     void free(void* ptr);
 
     void reload();
+    void unmap();
 
     MemoryManager(const MemoryManager&) = delete;
     MemoryManager& operator=(const MemoryManager&) = delete;

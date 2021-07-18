@@ -39,7 +39,9 @@ __process_toProcess:
     mov qword[__kernel_stack_pointer], rsp ; store kernel stack pointer
     mov rsp, rdx ; load process stack pointer
     mov byte[rbx], $1 ; rbx is pointer to inProcess ; set in process after loading process stack pointer
-    jmp rax ; jump to process code
+    mov eax, $0
+    cpuid
+    jmp rdi ; jump to process code
 
 __process_toProcess_return_to_kernel: ; process executed return to kernel stack
     mov rsp, qword[__kernel_stack_pointer] ; load kernel stack pointer
@@ -104,4 +106,6 @@ __process_toKernel:
 
 section .bss
 __kernel_stack_pointer:
+    resb 8
+__checkCounter:
     resb 8

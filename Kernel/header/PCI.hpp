@@ -56,15 +56,19 @@ public:
         };
         bool valid;
         bool io;
+        uint8_t type;
+        uint64_t size;
         uint64_t address;
         uint64_t virtualAddress;
         void setup(PCI* pci, uint8_t barID);
         void write8(uint32_t offset, uint8_t data);
         void write16(uint32_t offset, uint16_t data);
         void write32(uint32_t offset, uint32_t data);
+        void write64(uint32_t offset, uint64_t data);
         uint8_t read8(uint32_t offset);
         uint16_t read16(uint32_t offset);
         uint32_t read32(uint32_t offset);
+        uint64_t read64(uint32_t offset);
 
         inline BARAccess operator[](uint64_t index) {
             return {this, index * 4};
