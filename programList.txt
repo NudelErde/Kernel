@@ -1,4 +1,5 @@
 badsh:startup.elf
 cat:lib/cat.elf
+dog:lib/dog.elf
 ls:lib/ls.elf
 fileSize:lib/fileSize.elf
