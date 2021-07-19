@@ -191,7 +191,6 @@ static void readAPIC(void* ptr) {
 }
 
 static void processTable(uint64_t table, uint64_t doNotUnmapAddress) {
-    kout << Hex(table) << '\n';
     ACPISDTHeader* h = (ACPISDTHeader*) table;
     MemoryPage basePage;
     MemoryPage* pages;

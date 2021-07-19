@@ -278,7 +278,7 @@ void AHCI::AHCIDevice::setup() {
 
         if (!success) {
             kout << "AHCI driver out of memory\n";
-            asm("hlt");
+            asm("cli\nhlt");
         }
         PhysicalMemoryManagment::setUsed(page, true);
         PhysicalMemoryManagment::setUsed(page + pageSize, true);

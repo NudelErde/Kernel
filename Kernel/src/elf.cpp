@@ -90,7 +90,7 @@ struct ProgramEntry {
 
 static_assert(sizeof(ProgramEntry) == 56);
 
-constexpr uint64_t tempMap = 100Ti;
+constexpr uint64_t tempMap = 0Ti;
 
 uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint64_t parentPid, bool loadWithDebug) {
     uint64_t inodeNum = ext.findFileINode(str);
@@ -181,7 +181,7 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
         for (; currentTargetMemoryAddress < entry.memorySize; currentTargetMemoryAddress += pageSize) {
             new (programPages + pagesIndex) MemoryPage(PhysicalMemoryManagment::getFreeUserPage());// in place construct
             programPagesPermissions[pagesIndex] |= entry.flags;
-            programPages[pagesIndex++].mapTo(currentTargetMemoryAddress + entry.memoryOffset + tempMap, true, true);// offset by 1TiB in virtual memory to avoid collision with stack
+            programPages[pagesIndex++].mapTo(currentTargetMemoryAddress + entry.memoryOffset + tempMap, true, true);// offset by [tempMap] in virtual memory to avoid collision with stack
         }
 
         if (highestAddress < currentTargetMemoryAddress + entry.memoryOffset) {

@@ -3,6 +3,7 @@
 #include "debug.hpp"
 #include "interrupt.hpp"
 #include "print.hpp"
+#include "units.hpp"
 
 namespace Kernel {
 
@@ -28,7 +29,7 @@ void initKernelDynamicMemory() {
     //register page fault handler
     Interrupt::setHandler(14, onPageFault, 1);
 
-    ptr = new ((void*) buffer) MemoryManager(false, 0x80000000, 100);
+    ptr = new ((void*) buffer) MemoryManager(false, 2Gi, 100);
     ptr->reload();// set as active heap
 }
 

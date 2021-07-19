@@ -108,13 +108,10 @@ void get_multiboot_infos() {
     TagStructure head = *(TagStructure*) (void*) (size_t) tagsPointer;
     tagsPointer += sizeof(head);
 
-    kout << "Tags: ";
-
     for (uint32_t remainingSize = head.total_size; remainingSize;) {
         BasicTag* tag = (BasicTag*) (void*) (size_t) tagsPointer;
         tagsPointer += realign(tag->size);
         remainingSize -= realign(tag->size);
-        kout << Hex(tag->type) << ", ";
         if (tag->type == 0xE) {
             RSDPDescriptor* desc = (RSDPDescriptor*) (((uint32_t*) tag) + 2);
             if (basicStrEq(desc->Signature, "RSD PTR ", 8)) {
@@ -222,7 +219,6 @@ void get_multiboot_infos() {
         if (tag->type == 0)
             break;
     }
-    kout << '\n';
 }
 
 MemoryInfo* getMemoryInfoPtr() {
