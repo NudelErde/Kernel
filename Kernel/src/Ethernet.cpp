@@ -4,9 +4,10 @@
 namespace Kernel {
 
 Ethernet* Ethernet::openController(PCI* dev, const PCICommonHeader& header) {
-    if (header.deviceID == 0x8168 && header.vendorID == 0x10ec) {
+    if (RTL8168::isSupported(header.vendorID, header.deviceID)) {
         return new RTL8168(dev);
     }
+    return nullptr;
 }
 
 }// namespace Kernel

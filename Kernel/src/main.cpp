@@ -76,7 +76,7 @@ void loadPCI(bool withText) {
             AHCI::openController(d, header);
         } else if (header.classCode == 0x0C && header.subclass == 0x03) {
             usb = USB::openController(d, header);
-        } else if (header.classCode == 0x02 && header.subclass == 0x02) {
+        } else if (header.classCode == 0x02 && header.subclass == 0x00) {
             ethernet = Ethernet::openController(d, header);
         } else if (header.classCode == 0x03 && header.subclass == 0x00 && header.progIF == 0x00) {
             vga = VGA::openController(d, header);
@@ -156,7 +156,7 @@ void kern_start() {
 
     if (count == 0) {
         kout << "No devices found\n";
-        asm("hlt");
+        asm("cli\nhlt");
     }
 
     Device* hardDisk = Device::getDevice(Device::getSystemDevice());

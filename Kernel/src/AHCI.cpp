@@ -640,6 +640,7 @@ void AHCI::setup() {
     reset();
 
     uint32_t ports = portsAvailable;
+    kout << "AHCI ports: " << BitList(ports) << '\n';
     for (uint8_t i = 0; ports; ++i, ports >>= 1) {
         if (ports & 0b1)
             tryDevice(i);
