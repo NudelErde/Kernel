@@ -5,7 +5,9 @@
 namespace Kernel {
 class RTL8168 : public Ethernet {
 public:
-    RTL8168(PCI* dev);
+    RTL8168(PCI* dev, const PCICommonHeader& header);
+
+    void onInterrupt();
 
     static bool isSupported(uint64_t vendor, uint64_t device);
 
@@ -19,6 +21,7 @@ private:
     uint64_t txBaseDesc;
     uint64_t rxPages[rxPageCount];
     uint64_t txPages[txPageCount];
+    PCI* dev;
 };
 
 }// namespace Kernel

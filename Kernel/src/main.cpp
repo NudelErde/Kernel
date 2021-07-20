@@ -131,7 +131,10 @@ void kern_start() {
         }
         topLine[sizeof(topLine) - 1] = 0;
 
-        kout << topText << topLine;
+        for (const char* str = topLine; *str; ++str) {
+            topText.print(*str);
+        }
+
         VideoTextField mainText(vga, 0, 20, vga->getWidth(), vga->getHeight() - 20, 1);
         mainText.mapColor(1, 7);
         KernelOut::getRingBufferCurrent()[0] = 0;
@@ -156,7 +159,10 @@ void kern_start() {
 
     if (count == 0) {
         kout << "No devices found\n";
-        asm("cli\nhlt");
+        for (;;) {
+            kout << "Interrupt\n";
+            asm("hlt");
+        }
     }
 
     Device* hardDisk = Device::getDevice(Device::getSystemDevice());
@@ -165,7 +171,10 @@ void kern_start() {
     uint64_t inode = ext.findFileINode("/startup.elf");
     if (inode == 0) {
         kout << "No file named '/startup.elf' found.\n";
-        asm("cli\nhlt\n");
+        for (;;) {
+            kout << "Interrupt\n";
+            asm("hlt");
+        }
     }
     const char* args = "/startup.elf\0osboot\0";
     loadAndExecute(ext, args, args, 0, false); /*filename is first arg*/

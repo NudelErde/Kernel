@@ -25,42 +25,68 @@ void SharedInterrupt::setInterruptFunction(void ninterruptFunction(void*)) {
 }
 
 void SharedInterrupt::check() {
+    if (clearFunction) {
+        clearFunction(clearData, pciDevice);
+    }
     if (interruptFunction) {
         interruptFunction(data);
     }
 }
 
 struct SharedLink {
+    SharedLink() : interrupt(0){};
     SharedLink(uint8_t vector) : interrupt(vector) {}
-    SharedLink* next;
+    bool valid;
     SharedInterrupt interrupt;
 };
 
-static SharedLink* links[16];
+static SharedLink links[16][16];
 static uint8_t nextInsert = 0;
 
 void sharedInterrupt(const Interrupt& inter) {
     SharedLink* link = links[inter.interruptNumber - firstSharedInterrupt];
-    for (; link != nullptr; link = link->next) {
-        link->interrupt.check();
+    for (uint8_t i = 0; i < 16; ++i) {
+        if (link[i].valid) {
+            link[i].interrupt.check();
+        }
     }
+    Interrupt::sendHardwareEOI(inter.interruptNumber);
 }
 
 void SharedInterrupt::init() {
+    memset(links, 0, sizeof(links));
     for (uint8_t i = 0; i < 16; ++i) {
         Interrupt::setHandler(i + firstSharedInterrupt, sharedInterrupt);
     }
 }
 
 SharedInterrupt* SharedInterrupt::findInterrupt() {
-    SharedLink** link = &links[nextInsert];
+    SharedLink* link = links[nextInsert];
 
-    for (; *link != nullptr; link = &(*link)->next) {}
-    *link = new SharedLink(nextInsert + firstSharedInterrupt);
+    for (uint8_t i = 0; i < 16; ++i) {
+        if (!link[i].valid) {
+            auto result = new (link + i) SharedLink(nextInsert + firstSharedInterrupt);
+            result->valid = true;
+            nextInsert = (nextInsert + 1) % 16;
+            return &result->interrupt;
+        }
+    }
+    return nullptr;
+}
 
-    nextInsert = (nextInsert + 1) % 16;
+static void msiClear(uint64_t data, PCI* dev) {
+    dev->writeConfig(data + 0x14, 0);// clear pending bits
+}
 
-    return &(*link)->interrupt;
+static void msixClear(uint64_t data, PCI* dev) {
+    uint32_t pending = (uint32_t) data;
+    uint16_t entryCount = (uint16_t) (data >> 32);
+    uint8_t pendingBIR = pending & 0b111;
+    uint32_t pendingOffset = pending & ~0b111;
+    PCI::BAR& bar = dev->bars[pendingBIR];
+    for (uint16_t i = 0; i < (entryCount + 7) / 8; ++i) {
+        bar.write8(pendingOffset + i, 0);
+    }
 }
 
 bool SharedInterrupt::configInterrupt(PCI* dev, const PCICommonHeader& header) {
@@ -106,6 +132,9 @@ bool SharedInterrupt::configInterrupt(PCI* dev, const PCICommonHeader& header) {
         }
 
         dev->interrupt = SharedInterrupt::findInterrupt();
+        dev->interrupt->clearData = (uint64_t) pending | ((uint64_t) entryCount << 32);
+        dev->interrupt->pciDevice = dev;
+        dev->interrupt->clearFunction = msixClear;
         uint16_t data = dev->interrupt->getVector() & 0xFF;
         uint64_t address = (0xFEE00000 | (dev->interrupt->getProcessor() << 12));
         dev->writeConfig(0x04, dev->readConfig(0x04) | 0b111);// enable BAR
@@ -123,9 +152,13 @@ bool SharedInterrupt::configInterrupt(PCI* dev, const PCICommonHeader& header) {
         dev->interrupt = SharedInterrupt::findInterrupt();
         uint16_t data = dev->interrupt->getVector() & 0xFF;
         uint64_t address = (0xFEE00000 | (dev->interrupt->getProcessor() << 12));
-        dev->writeConfig(ptr + 0x00, capaBaseMSI | (0b1 << 23));
-        dev->writeConfig(ptr + 0x04, (uint32_t) address);
-        dev->writeConfig(ptr + 0x08, (uint32_t) (address >> 32));
+        dev->writeConfig(capaBaseMSI + 0x00, capaBaseMSI | (0b1 << 23));
+        dev->writeConfig(capaBaseMSI + 0x04, (uint32_t) address);
+        dev->writeConfig(capaBaseMSI + 0x08, (uint32_t) (address >> 32));
+
+        dev->interrupt->clearData = capaBaseMSI;
+        dev->interrupt->pciDevice = dev;
+        dev->interrupt->clearFunction = msiClear;
 
         uint32_t currentData = dev->readConfig(ptr + 0x0C) & 0xFFFF0000;
         dev->writeConfig(ptr + 0x0C, data | currentData);

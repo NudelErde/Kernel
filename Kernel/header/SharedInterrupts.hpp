@@ -9,6 +9,9 @@ private:
     uint8_t vector;
     void* data;
     void (*interruptFunction)(void*);
+    void (*clearFunction)(uint64_t, PCI*);
+    PCI* pciDevice;
+    uint64_t clearData;
 
 public:
     SharedInterrupt(uint8_t vector);

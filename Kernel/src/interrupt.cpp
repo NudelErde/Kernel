@@ -219,12 +219,14 @@ void Interrupt::setHardwareInterruptMask(uint8_t irq, bool enable) {
 void Interrupt::sendHardwareEOI(uint8_t irq) {
     LocalAPIC::endInterrupt();
 
-    if (irq >= 240)
-        irq -= 240;
-    if (irq > 8) {
-        outb(0xA0, 0x20);
+    if (irq <= 255 && irq > 240) {
+        if (irq >= 240)
+            irq -= 240;
+        if (irq > 8) {
+            outb(0xA0, 0x20);
+        }
+        outb(0x20, 0x20);
     }
-    outb(0x20, 0x20);
 }
 
 }// namespace Kernel

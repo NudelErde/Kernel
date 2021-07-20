@@ -5,7 +5,7 @@ namespace Kernel {
 
 Ethernet* Ethernet::openController(PCI* dev, const PCICommonHeader& header) {
     if (RTL8168::isSupported(header.vendorID, header.deviceID)) {
-        return new RTL8168(dev);
+        return new RTL8168(dev, header);
     }
     return nullptr;
 }
