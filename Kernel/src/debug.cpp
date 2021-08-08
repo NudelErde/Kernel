@@ -18,26 +18,26 @@ extern uint8_t kernel_end;
 Kernel::KernelOut& operator<<(Kernel::KernelOut& out, PrintPointer pp) {
     using namespace Kernel;
     uint64_t pointer = pp.pointer;
-    out << Hex(pointer);
+    out << Hex(pointer, sizeof(uint64_t) * 2);
     if (pointer < (uint64_t) (&kernel_start)) {
-        out << " (low data)";
+        out << " (low data)   ";
     } else if (pointer <= (uint64_t) (&boot_end)) {
-        out << " (boot)";
+        out << " (boot)       ";
     } else if (pointer <= (uint64_t) (&code_end)) {
         out << " (kernel code)";
     } else if (pointer <= (uint64_t) (&kernel_end)) {
         out << " (kernel data)";
     } else {
-        out << " (high data)";
+        out << " (high data)  ";
     }
     TSS* tss = getTss();
     if (tss) {
         if (pointer <= tss->ist1 && pointer > tss->ist1 - stackPageCount * pageSize) {
             out << " (Interrupt stack)";
         } else if (pointer <= tss->ist2 && pointer > tss->ist2 - stackPageCount * pageSize) {
-            out << " (Panic stack)";
+            out << " (Panic stack)    ";
         } else if (pointer <= tss->rsp0 && pointer > tss->rsp0 - stackPageCount * pageSize) {
-            out << " (Ring 0 stack)";
+            out << " (Ring 0 stack)   ";
         }
     }
     if (Thread::isInProgram()) {
@@ -156,23 +156,188 @@ uint64_t Debug::getRIP(void* interruptStack) {
     return ((uint64_t*) interruptStack)[0];
 }
 
-void Debug::printStackTrace() {
+static bool addChar(char** buffer, uint64_t* size, char ch) {
+    --(*size);
+    **buffer = ch;
+    ++(*buffer);
+    return *size != 0;
+}
+
+static bool addString(char** buffer, uint64_t* size, const char* str) {
+    for (; *str; ++str) {
+        if (!addChar(buffer, size, *str)) return false;
+    }
+    return true;
+}
+
+bool Debug::demangleSymbol(const char* source, char* buffer, uint64_t size) {
+    enum class State {
+        CHECK_IF_MANGLED,
+        READ_SIZE,
+        READ,
+        FLAGS,
+        READ_ARGS
+    };
+    State state = State::CHECK_IF_MANGLED;
+    uint64_t subState = 0;
+    uint8_t nested = 0;
+    bool first = true;
+    uint8_t typePointerCount = 0;
+    uint8_t typeRefernceCount = 0;
+    bool typeConst = false;
+    bool typeVolatile = false;
+    uint8_t argCount = 0;
+
+    const char* prefix = "_Z";
+
+    for (; *source; ++source) {
+        switch (state) {
+            case State::CHECK_IF_MANGLED:
+                if (prefix[subState] == *source) {
+                    ++subState;
+                } else {
+                    return false;
+                }
+                if (subState == 2) {
+                    subState = 0;
+                    state = State::READ_SIZE;
+                }
+                break;
+            case State::READ_SIZE:
+                if (*source <= '9' && *source >= '0') {
+                    if (!first && subState == 0) {
+                        if (!addChar(&buffer, &size, ':')) return false;
+                        if (!addChar(&buffer, &size, ':')) return false;
+                    }
+                    first = false;
+                    subState *= 10;
+                    subState += *source - '0';
+                } else if (subState == 0) {
+                    //retry in State::FLAGS
+                    --source;
+                    state = State::FLAGS;
+                } else {
+                    // retry in State::READ
+                    --source;
+                    state = State::READ;
+                }
+                break;
+            case State::READ:
+                if (subState) {
+                    --subState;
+                    if (!addChar(&buffer, &size, *source)) return false;
+                } else {
+                    --source;
+                    state = State::READ_SIZE;
+                }
+                break;
+            case State::FLAGS:
+                if (*source == 'N') {
+                    ++nested;
+                    state = State::READ_SIZE;
+                    break;
+                }
+                if (*source == 'E') {
+                    --nested;
+                    if (nested == 0)
+                        state = State::READ_ARGS;
+                    break;
+                }
+                if (nested)
+                    break;
+                state = State::READ_ARGS;
+                --source;
+                break;
+            case State::READ_ARGS: {
+                if (*source == 'P') {
+                    ++typePointerCount;
+                }
+                if (*source == 'R') {
+                    typeRefernceCount = 1;
+                }
+                if (*source == 'O') {
+                    typeRefernceCount = 2;
+                }
+                if (*source == 'K') {
+                    typeConst = true;
+                }
+                if (*source == 'V') {
+                    typeVolatile = true;
+                }
+                struct TypeNameElement {
+                    char key;
+                    const char* name;
+                };
+                const TypeNameElement types[]{{'v', "void"}, {'w', "char16_t"}, {'b', "bool"}, {'c', "char"}, {'a', "int8_t"}, {'h', "uint8_t"}, {'s', "int16_t"}, {'t', "uint16_t"}, {'i', "int32_t"}, {'j', "uint32_t"}, {'l', "int64_t"}, {'m', "uint64_t"}, {'f', "float"}, {'d', "double"}, {'e', "long double"}, {'z', "..."}};
+                for (const auto& type : types) {
+                    if (type.key == *source) {
+                        if (argCount) {
+                            if (!addString(&buffer, &size, ", ")) return false;
+                        } else {
+                            if (!addChar(&buffer, &size, '(')) return false;
+                        }
+                        ++argCount;
+                        if (typeConst) {
+                            if (!addString(&buffer, &size, "const ")) return false;
+                            typeConst = false;
+                        }
+                        if (typeVolatile) {
+                            if (!addString(&buffer, &size, "volatile ")) return false;
+                            typeVolatile = false;
+                        }
+                        if (!addString(&buffer, &size, type.name)) return false;
+                        for (; typePointerCount; --typePointerCount) {
+                            if (!addChar(&buffer, &size, '*')) return false;
+                        }
+                        for (; typeRefernceCount; --typeRefernceCount) {
+                            if (!addChar(&buffer, &size, '&')) return false;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+    if (argCount) {
+        if (!addChar(&buffer, &size, ')')) return false;
+    }
+    return true;
+}
+
+static void tryPrintSymbol(uint64_t ptr) {
+    if (Debug::Symbol symbol = Debug::getSymbol((void*) ptr); symbol.flags) {
+        char buffer[256]{};
+        const char* name = symbol.name;
+        if (Debug::demangleSymbol(name, buffer, 256)) {
+            name = buffer;
+        }
+        kout << " (" << name << " + 0x" << Hex(ptr - symbol.value) << ")";
+    }
+}
+
+void Debug::printStackTrace(uint64_t rbp) {
     kout << "Stack Trace: \n";
+    for (uint64_t i = 0; i < 64; ++i) {
+        if (!(MemoryPage::getPhysicalAddressFromVirtual(rbp) != 0 && MemoryPage::getPhysicalAddressFromVirtual(rbp + 8) != 0))
+            return;
+        uint64_t rip = *(uint64_t*) (rbp + 8);
+        rbp = *(uint64_t*) (rbp);
+        kout << "RBP: " << PrintPointer(rbp);
+        kout << " | ";
+        kout << "RIP: " << Hex(rip, 8);
+        tryPrintSymbol(rip);
+        kout << '\n';
+    }
+    kout << "Stack has more than 64 elements. Stackoverflow?\n";
+}
+
+void Debug::printStackTrace() {
     uint64_t rbp = ~0;
     asm(R"(
         mov %%rbp, %0
     )"
         : "=a"(rbp));
-    bool mapped = MemoryPage::getPhysicalAddressFromVirtual(rbp) != 0 && MemoryPage::getPhysicalAddressFromVirtual(rbp + 8) != 0;
-    while (mapped) {
-        uint64_t rip = *(uint64_t*) (rbp + 8);
-        rbp = *(uint64_t*) (rbp);
-        kout << "RIP: " << Hex(rip, 8) << " | ";
-        kout << "RBP: " << PrintPointer(rbp) << '\n';
-        if (rip == 0)
-            return;
-        mapped = MemoryPage::getPhysicalAddressFromVirtual(rbp) != 0 && MemoryPage::getPhysicalAddressFromVirtual(rbp + 8) != 0;
-    }
+    printStackTrace(rbp);
 }
 
 void Debug::removeBreakpoint(uint8_t debugNum) {
@@ -207,6 +372,58 @@ void Debug::removeBreakpoint(uint8_t debugNum) {
         : "=a"(dr7)::);
 
     data.callbacks[debugNum] = nullptr;
+}
+
+
+struct SectionEntry {
+    uint32_t name;
+    uint32_t type;
+    uint64_t flags;
+    uint64_t addr;
+    uint64_t offset;
+    uint64_t size;
+    uint32_t link;
+    uint32_t info;
+    uint64_t addralign;
+    uint64_t entsize;
+} __attribute__((packed));
+
+struct SymbolElement {
+    uint32_t name;
+    uint8_t info;
+    uint8_t other;
+    uint16_t shndx;
+    uint64_t value;
+    uint64_t size;
+} __attribute__((packed));
+
+SectionEntry* sections;
+SectionEntry* symbolSection;
+void Debug::setSectionArray(void* s) {
+    sections = (SectionEntry*) s;
+}
+void Debug::setSymbolSection(void* s) {
+    symbolSection = (SectionEntry*) s;
+}
+
+Debug::Symbol Debug::getSymbol(void* ptr) {
+    if (!symbolSection)
+        return {};
+    SymbolElement* elements = (SymbolElement*) symbolSection->addr;
+    uint64_t address = (uint64_t) ptr;
+    for (uint64_t i = 0; i < symbolSection->size / sizeof(SymbolElement); ++i) {
+        if (address >= elements[i].value && address < elements[i].value + elements[i].size) {
+            Symbol s;
+            SectionEntry* stringTable = &sections[symbolSection->link];
+            const char* name = ((const char*) stringTable->addr) + elements[i].name;
+            s.name = name;
+            s.value = elements[i].value;
+            s.size = elements[i].size;
+            s.flags = elements[i].info | (elements[i].other << 8) | (1llu << 63);
+            return s;
+        }
+    }
+    return {};
 }
 
 void Debug::setCallback(uint8_t debugNum, bool (*callback)(uint64_t)) {
@@ -305,16 +522,16 @@ static void readMemory() {
     }
 }
 
-static void stackRead(uint64_t base, uint64_t instruction) {
+static void stackRead(uint64_t upBase) {
+    uint64_t base = *((uint64_t*) upBase);
+    uint64_t instruction = *((uint64_t*) (upBase + 8));
     while (true) {
         kout << "Base: 0x" << Hex(base) << " Instr: 0x" << Hex(instruction) << '\n';
-        kout << "Stack variable (v), Down (d), Up (u)";
+        kout << "Stack variable (v), Frame (f), Down (d), Up (u)";
         uint8_t ch = readChar();
         kout << '\n';
         if (ch == 'd' || ch == 'D') {
-            uint64_t rbp = *((uint64_t*) base);
-            uint64_t rip = *((uint64_t*) (base + 8));
-            stackRead(rbp, rip);
+            stackRead(base);
         }
         if (ch == 'v' || ch == 'V') {
             kout << "Offset: 0x";
@@ -322,27 +539,34 @@ static void stackRead(uint64_t base, uint64_t instruction) {
             kout << '\n';
             kout << "Value: 0x" << Hex(*((uint64_t*) (base - offset))) << '\n';
         }
+        if (ch == 'f' || ch == 'F') {
+            uint64_t size = base - upBase;
+            kout << Hex(size) << '\n';
+            if (size >= 0x1000)
+                continue;
+            for (uint64_t i = 0; i < size; i += 8) {
+                kout << Hex(i, 2) << ':' << Hex(*(uint64_t*) (base - i), 16) << '\n';
+            }
+        }
         if (ch == 'u' || ch == 'U') {
             return;
         }
     }
 }
 
-static void interactive(uint64_t base, uint64_t instruction) {
+static void interactive(uint64_t base) {
     while (true) {
-        while (true) {
-            kout << "Memory (m), Stack (s), Exit (e)";
-            uint8_t ch = readChar();
-            kout << '\n';
-            if (ch == 'm' || ch == 'M') {
-                readMemory();
-            }
-            if (ch == 's' || ch == 'S') {
-                stackRead(base, instruction);
-            }
-            if (ch == 'e' || ch == 'E') {
-                return;
-            }
+        kout << "Memory (m), Stack (s), Exit (e)";
+        uint8_t ch = readChar();
+        kout << '\n';
+        if (ch == 'm' || ch == 'M') {
+            readMemory();
+        }
+        if (ch == 's' || ch == 'S') {
+            stackRead(base);
+        }
+        if (ch == 'e' || ch == 'E') {
+            return;
         }
     }
 }
@@ -356,16 +580,26 @@ void Debug::printDebugInfo(void* stackPointer) {
     uint64_t stackSegment = stack[4];
     kout << (Thread::isInProgram() ? "In program" : "In kernel") << '\n';
     if (Thread::isInProgram()) {
-        kout << "Program name: " << Process::getLastLoadedProcess()->getArgumentPointer() << ':' << Process::getLastLoadedProcess()->getPID() << ':' << Thread::getCurrent()->getPID() << '\n';
-        kout << "Static program pages: \n";
-        for (uint64_t i = 0; i < Process::getLastLoadedProcess()->count; ++i) {
-            kout << Hex(Process::getLastLoadedProcess()->programPages[i].getVirtualAddress()) << '\n';
+        kout << "--------[Program ]--------\n";
+        if (MemoryPage::getPhysicalAddressFromVirtual((uint64_t) Process::getLastLoadedProcess())) {// check if process exists
+            const char* programName = Process::getLastLoadedProcess()->getArgumentPointer();
+            if (!MemoryPage::getPhysicalAddressFromVirtual((uint64_t) programName)) {// check if program name exists
+                programName = "unknown";
+            }
+            kout << "Program name: " << programName << ':' << Process::getLastLoadedProcess()->getPID() << ':' << Thread::getCurrent()->getPID() << ':' << Thread::getCurrent()->getTID() << '\n';
+            kout << "Static program pages: \n";
+            for (uint64_t i = 0; i < Process::getLastLoadedProcess()->count; ++i) {
+                kout << Hex(Process::getLastLoadedProcess()->programPages[i].getVirtualAddress()) << '\n';
+            }
         }
     }
+    kout << "--------[Register]--------\n";
     uint64_t rbp;
     asm("mov %%rbp, %0"
         : "=a"(rbp)::);
-    kout << "Instruction pointer: 0x" << PrintPointer(rip) << '\n';
+    kout << "Instruction pointer: 0x" << PrintPointer(rip);
+    tryPrintSymbol(rip);
+    kout << '\n';
     kout << "Stack pointer:       0x" << PrintPointer(rsp) << '\n';
     kout << "Stack base pointer:  0x" << PrintPointer(rbp) << '\n';
     kout << "Code segment:          " << PrintSegment(codeSegment) << '\n';
@@ -386,7 +620,9 @@ void Debug::printDebugInfo(void* stackPointer) {
         flags >>= 0b1;
     }
     kout << '\n';
-    interactive(rbp, rip);
+    kout << "--------[ Stack  ]--------\n";
+    printStackTrace();
+    interactive(rbp);
 }
 
 // crack stuff; do not use pls

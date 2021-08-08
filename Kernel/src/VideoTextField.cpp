@@ -56,7 +56,8 @@ void VideoTextField::printLine() {
     uint64_t lineSize = getWidth();
     for (uint64_t line = 1; line < getHeight(); ++line) {
         for (uint64_t x = 0; x < getWidth(); ++x) {
-            setChar(x, line - 1, textBuffer[x + line * lineSize]);
+            if (textBuffer[x + line * lineSize] != textBuffer[x + (line - 1) * lineSize])
+                setChar(x, line - 1, textBuffer[x + line * lineSize]);
         }
     }
     for (uint64_t x = 0; x < getWidth(); ++x) {
@@ -967,6 +968,7 @@ VideoTextField::VideoTextField(VGA* vga, uint64_t baseX, uint64_t baseY, uint64_
     scale = s * 8;
     transparentColor = tc;
     textBuffer = new char[getWidth() * getHeight()];
+    memset(textBuffer, 0, getWidth() * getHeight());
     if (map == nullptr) {
         for (uint8_t i = 0; i < 0x10; ++i) {
             colorMap[i] = i;

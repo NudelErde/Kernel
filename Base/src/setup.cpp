@@ -236,6 +236,44 @@ uint64_t getFileSize(uint64_t device, uint64_t inode) {
     return request.sizeInBytes;
 }
 
+uint64_t getPciDeviceCount() {
+    uint64_t count = 0;
+    syscall(5, 0x02, 0, (uint64_t) &count);
+    return count;
+}
+
+void getPciDeviceList(uint64_t* buffer, uint64_t count) {
+    syscall(5, 0x02, count, (uint64_t) buffer);
+}
+void getPciDeviceHeader(uint64_t busDeviceFuntion, uint8_t* buffer) {
+    syscall(5, 0x03, busDeviceFuntion, (uint64_t) buffer);
+}
+void allocateMemoryPage(uint64_t virtualAddress) {
+    syscall(5, 0x04, virtualAddress, 0);
+}
+void freeMemoryPage(uint64_t virtualAddress) {
+    syscall(5, 0x05, virtualAddress, 0);
+}
+uint64_t virtualToPhysicalAddress(uint64_t virtualAddress) {
+    uint64_t physicalAddressBuffer = 0;
+    syscall(5, 0x06, virtualAddress, (uint64_t) &physicalAddressBuffer);
+    return physicalAddressBuffer;
+}
+void mapVirtualToPhysicalAddress(uint64_t vAddress, uint64_t pAddress) {
+    syscall(5, 0x07, vAddress, pAddress);
+}
+
+uint64_t getDriverStatus(uint64_t busDeviceFunction) {
+    uint64_t result = 0;
+    syscall(5, 0x10, busDeviceFunction, (uint64_t) &result);
+    return result;
+}
+void driverCall(uint64_t busDeviceFunction, uint8_t num, void* arg) {
+    if (!(num >= 0x1 && num <= 0xF))
+        return;
+    syscall(5, 0x10 + num, busDeviceFunction, (uint64_t) arg);
+}
+
 int countArgc(const char* args) {
     int argc = 0;
     if (args == 0 || args[0] == 0) {

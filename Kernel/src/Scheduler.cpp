@@ -17,13 +17,62 @@ static constexpr uint64_t maxProcessCount = 16;
 static uint64_t currentRelativeTime;
 static uint8_t staticProcessBuffer[sizeof(Process)];
 
-static uint8_t processListBuffer[sizeof(LinkedList<Process>)];
-static uint8_t threadListBuffer[sizeof(LinkedList<Thread>)];
+template<typename T>
+struct ListNode {
+    T* value;
+    ListNode* next;
+};
 
-LinkedList<Process>* processList;
-LinkedList<Thread>* threadList;
+ListNode<Process>* procFirstNode;
+ListNode<Thread>* threadFirstNode;
 
 static bool removed;
+
+void Scheduler::forceKillProcess(uint64_t pid) {
+    if (Thread::isInProgram())
+        getKernelMemoryManager().reload();
+
+    if (procFirstNode->value->getPID() == pid) {
+        procFirstNode = procFirstNode->next;
+    }
+
+    for (auto ptr = procFirstNode; ptr->next; ptr = ptr->next) {
+        if (ptr->next->value->getPID() == pid) {
+            auto removed = ptr->next;
+            ptr->next = removed->next;
+            delete removed->value;
+            removed->value = 0;
+            delete removed;
+            break;
+        }
+    }
+
+    if (Thread::isInProgram())
+        Process::getLastLoadedProcess()->reload();
+}
+
+void Scheduler::forceKillThread(uint64_t tid) {
+    if (Thread::isInProgram())
+        getKernelMemoryManager().reload();
+
+    if (threadFirstNode->value->getTID() == tid) {
+        threadFirstNode = threadFirstNode->next;
+    }
+
+    for (auto ptr = threadFirstNode; ptr->next; ptr = ptr->next) {
+        if (ptr->next->value->getTID() == tid) {
+            auto removed = ptr->next;
+            ptr->next = removed->next;
+            delete removed->value;
+            removed->value = 0;
+            delete removed;
+            break;
+        }
+    }
+
+    if (Thread::isInProgram())
+        Process::getLastLoadedProcess()->reload();
+}
 
 Process* Scheduler::getProcessById(uint64_t pid) {
     if (Thread::isInProgram())
@@ -31,10 +80,9 @@ Process* Scheduler::getProcessById(uint64_t pid) {
 
     Process* proc = nullptr;
 
-    bool searching = true;
-    for (auto iter = processList->getIterator(); iter.valid() && searching; searching = iter.next()) {
-        if (iter.get()->getPID() == pid) {
-            proc = iter.get();
+    for (auto ptr = procFirstNode; ptr; ptr = ptr->next) {
+        if (ptr->value->getPID() == pid) {
+            proc = ptr->value;
             break;
         }
     }
@@ -50,10 +98,9 @@ Thread* Scheduler::getThreadById(uint64_t tid) {
 
     Thread* thread = nullptr;
 
-    bool searching = true;
-    for (auto iter = threadList->getIterator(); iter.valid() && searching; searching = iter.next()) {
-        if (iter.get()->getTID() == tid) {
-            thread = iter.get();
+    for (auto ptr = threadFirstNode; ptr; ptr = ptr->next) {
+        if (ptr->value->getTID() == tid) {
+            thread = ptr->value;
             break;
         }
     }
@@ -80,16 +127,26 @@ void Scheduler::addProcess(Process&& proc) {
         proc.programPages = pagesInKernel;
         ((Process*) staticProcessBuffer)->reload();
         delete (uint8_t*) pagesInCurrentProcess;
-        getKernelMemoryManager().reload();
+        //getKernelMemoryManager().reload();
     }
-    processList->getIterator().insert((Process &&) proc);
+    getKernelMemoryManager().reload();
+    auto tmp = procFirstNode;
+    procFirstNode = new ListNode<Process>();
+    procFirstNode->value = new Process((Process &&) proc);
+    procFirstNode->next = tmp;
 }
 
 void Scheduler::addThread(Thread&& thread) {
-    getKernelMemoryManager().reload();
-    threadList->getIterator().insert((Thread &&) thread);
     if (Thread::isInProgram())
-        ((Process*) staticProcessBuffer)->reload();
+        getKernelMemoryManager().reload();
+
+    auto tmp = threadFirstNode;
+    threadFirstNode = new ListNode<Thread>();
+    threadFirstNode->value = new Thread((Thread &&) thread);
+    threadFirstNode->next = tmp;
+
+    if (Thread::isInProgram())
+        Process::getLastLoadedProcess()->reload();
 }
 
 void Scheduler::removeCurrentThread() {
@@ -111,12 +168,16 @@ uint64_t Scheduler::getCurrentRelativeTime() {
 }
 
 void Scheduler::run() {
-    auto iter = threadList->getIterator();
+    ListNode<Thread>* tnode = threadFirstNode;
     while (true) {
-        if (!iter.next()) {
-            iter = threadList->getIterator();
+        if (tnode == nullptr) {
+            tnode = threadFirstNode;
+            continue;
         }
-        Thread* currentThread = iter.get();
+        Thread* currentThread = tnode->value;
+
+        tnode = tnode->next;
+
         bool isLocked = false;
         for (uint8_t i = 0; i < 32; ++i) {
             if (currentThread->locks[i] != 0) {
@@ -125,20 +186,11 @@ void Scheduler::run() {
             }
         }
         if (isLocked) {
-            asm("hlt");
             continue;
         }
 
         bool cont = true;
-        Process* proc = nullptr;
-
-        LinkedList<Process>::Iterator procIter = processList->getIterator();
-        for (; procIter.valid() && cont; cont = procIter.next()) {
-            if (procIter.get()->getPID() == currentThread->getPID()) {
-                proc = procIter.get();
-                break;
-            }
-        }
+        Process* proc = getProcessById(currentThread->getPID());
 
         if (proc != nullptr) {
             if (!currentThread->markedProcess) {
@@ -179,12 +231,11 @@ void Scheduler::run() {
                     getThreadById(proc->finishLocks[i].tid)->clearLock(proc->finishLocks[i].tid);
                 }
             }
-            asm("hlt");
-            procIter.remove();
+            forceKillProcess(proc->pid);
             getKernelMemoryManager().reload();
         }
         if (removed) {
-            iter.remove();
+            forceKillThread(currentThread->tid);
         }
 
         removed = false;
@@ -192,8 +243,6 @@ void Scheduler::run() {
 }
 
 void Scheduler::init() {
-    threadList = (LinkedList<Thread>*) threadListBuffer;
-    processList = (LinkedList<Process>*) processListBuffer;
     removed = false;
     currentRelativeTime = 100;
 }

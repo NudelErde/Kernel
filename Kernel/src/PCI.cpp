@@ -12,6 +12,23 @@ namespace Kernel {
 static uint64_t lastBarVirtualAddress;
 constexpr uint64_t barVirtualAddressStart = 10Ti;
 
+static uint8_t driverBuffer[sizeof(LinkedList<PCIDriver*>)];
+static uint64_t driverCount;
+
+uint64_t PCI::getDriverCount() {
+    return driverCount;
+}
+void PCI::setDriverCount(uint64_t count) {
+    driverCount = count;
+}
+
+LinkedList<PCIDriver*>& PCI::getDrivers() {
+    return *(LinkedList<PCIDriver*>*) &driverBuffer;
+}
+void PCI::setDrivers(LinkedList<PCIDriver*>&& list) {
+    *(LinkedList<PCIDriver*>*) &driverBuffer = (LinkedList<PCIDriver*> &&) list;
+}
+
 void PCI::BAR::setup(PCI* pci, uint8_t barID) {
     if (lastBarVirtualAddress == 0) {
         lastBarVirtualAddress = barVirtualAddressStart;

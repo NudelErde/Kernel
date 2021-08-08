@@ -13,7 +13,7 @@ static MemoryManager* ptr;
 void onPageFault(const Interrupt& i) {
     uint64_t mem;
     asm(R"(
-        mov %%cr2, %0
+        movq %%cr2, %0
         )"
         : "=a"(mem)
         :
@@ -29,7 +29,7 @@ void initKernelDynamicMemory() {
     //register page fault handler
     Interrupt::setHandler(14, onPageFault, 1);
 
-    ptr = new ((void*) buffer) MemoryManager(false, 2Gi, 100);
+    ptr = new ((void*) buffer) MemoryManager(false, 64Ti, 100);
     ptr->reload();// set as active heap
 }
 

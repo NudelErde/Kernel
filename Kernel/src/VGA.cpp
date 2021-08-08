@@ -1,6 +1,7 @@
 #include "VGA.hpp"
 #include "KernelOut.hpp"
 #include "inout.hpp"
+#include "units.hpp"
 
 namespace Kernel {
 
@@ -343,5 +344,42 @@ void VGA::writePort(uint32_t port, uint64_t index, uint64_t data) {
     }
 }
 
+uint64_t VGA::getStatus() {
+    return 1llu << 63;
+};
+uint64_t VGA::getArgSize(uint8_t argNum) {
+    constexpr uint64_t argSizes[]{0, 1, 1};
+    return argNum < (sizeof(argSizes) / sizeof(uint64_t)) ? argSizes[argNum] : 0;
+};
+void VGA::handleDriverCall(uint8_t argNum, void* arg) {
+    switch (argNum) {
+        case 1:
+            *(uint64_t*) arg = width;
+            return;
+        case 2:
+            *(uint64_t*) arg = height;
+            return;
+        case 3: {
+            VGA::Mode* mode = (VGA::Mode*) arg;
+            loadVGAMode(*mode);
+            return;
+        }
+        case 4: {
+            struct BufferDraw {
+                uint64_t start;
+                uint64_t bufferSize;
+                uint8_t buffer[1Ki];
+            } __attribute__((packed));
+            BufferDraw* draw = (BufferDraw*) arg;
+            //todo: optimise
+            for (uint64_t i = 0; i < draw->bufferSize; ++i) {
+                uint64_t x = (i + draw->start) % width;
+                uint64_t y = (i + draw->start) / height;
+                drawPixel(x, y, draw->buffer[i]);
+            }
+            return;
+        }
+    }
+};
 
 }// namespace Kernel

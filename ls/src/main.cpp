@@ -47,7 +47,7 @@ int main(int argc, const char* argv[]) {
     }
     if (count > 8) {
         DirectoryEntry* entries = (DirectoryEntry*) malloc(sizeof(DirectoryEntry) * count);
-        count = getDirectoryEntriesOfINode(systemDevice, 2, count, entries);
+        count = getDirectoryEntriesOfINode(systemDevice, inode, count, entries);
         for (uint64_t i = 0; i < count; ++i) {
             if (i >= 8) {
                 if (i % 8 == 0)

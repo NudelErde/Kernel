@@ -87,10 +87,12 @@ struct BiosBootDevice {
 };
 BiosBootDevice biosBootDevice;
 uint32_t imageBaseAddress;
+uint64_t symbolBase;
 
 void get_multiboot_infos() {
     rsdtPointer = 0;
     xsdtPointer = 0;
+    symbolBase = 0;
     struct TagStructure {
         uint32_t total_size;
         uint32_t reserved;
@@ -201,6 +203,7 @@ void get_multiboot_infos() {
             //ignore basic memory information
         } else if (tag->type == 0x9) {
             //TODO: advanced debug information with elf symbols
+            symbolBase = (uint64_t) tag;
         } else if (tag->type == 0xA) {
             // APM only useable in 32 bit mode
         } else if (tag->type == 0x2) {
@@ -240,6 +243,7 @@ bool PhysicalMemoryManagment::isUsed(uint64_t physical) {
 }
 
 uint64_t PhysicalMemoryManagment::getPageIndex(uint64_t physical) {
+    physical &= ~(pageSize - 1);
     for (MemoryInfo* ptr = info; ptr != nullptr; ptr = ptr->nextNode) {
         if (physical >= ptr->start && physical < ptr->start + ptr->length) {
             uint64_t offset = physical - ptr->start;
@@ -289,6 +293,45 @@ void PhysicalMemoryManagment::init() {
             setUsed(index, true);
         }
 
+        struct ELFSymbols {
+            uint32_t type;
+            uint32_t size;
+            uint16_t num;
+            uint16_t entsize;
+            uint16_t shndx;
+            uint16_t rsv;
+        } __attribute__((packed));
+
+        struct SectionEntry {
+            uint32_t name;
+            uint32_t type;
+            uint64_t flags;
+            uint64_t addr;
+            uint64_t offset;
+            uint64_t size;
+            uint32_t link;
+            uint32_t info;
+            uint64_t addralign;
+            uint64_t entsize;
+        } __attribute__((packed));
+
+        ELFSymbols* symbols = (ELFSymbols*) symbolBase;
+        for (uint64_t index = symbolBase; index < symbolBase + symbols->size; index += pageSize) {
+            setUsed(index, true);
+        }
+        SectionEntry* entries = (SectionEntry*) (symbolBase + sizeof(ELFSymbols) + 4);
+        Debug::setSectionArray(entries);
+
+        for (uint64_t i = 0; i < symbols->num; ++i) {
+            if (entries[i].type == 3 || entries[i].type == 2) {
+                for (uint64_t index = entries[i].addr; index < entries[i].addr + entries[i].size; index += pageSize) {
+                    setUsed(index, true);
+                }
+            }
+            if (entries[i].type == 2) {
+                Debug::setSymbolSection(&entries[i]);
+            }
+        }
     } else {
         kout << "PANIC\n";
     }
@@ -540,10 +583,18 @@ void memcpy(void* dest, const void* src, uint64_t count) {
     }
 }
 
+extern "C" void __memset(void* dest, uint8_t value, uint64_t count);
+
+asm(R"(
+__memset:
+    mov %rsi, %rax
+    mov %rdx, %rcx
+    rep stosb
+    ret
+)");
+
 void memset(void* dest, uint8_t value, uint64_t count) {
-    for (uint64_t i = 0; i < count; ++i) {
-        ((uint8_t*) dest)[i] = value;
-    }
+    __memset(dest, value, count);
 }
 
 bool memequ(const void* a, const void* b, uint64_t count) {

@@ -1,5 +1,7 @@
-badsh:startup.elf
+badsh:lib/badsh.elf
+network:shared/network.elf
 cat:lib/cat.elf
 dog:lib/dog.elf
 ls:lib/ls.elf
 fileSize:lib/fileSize.elf
+boot:start/boot.elf

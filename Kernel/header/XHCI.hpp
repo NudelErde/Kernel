@@ -38,6 +38,10 @@ public:
     XhciUsbController(PCI* dev, const Kernel::PCICommonHeader& header);
     void onInterrupt();
 
+    uint64_t getStatus() = 0;
+    uint64_t getArgSize(uint8_t argNum) = 0;
+    void handleDriverCall(uint8_t argNum, void* arg) = 0;
+
 private:
     uint32_t structural1;
     uint32_t structural2;

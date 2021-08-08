@@ -30,3 +30,50 @@ syscall is interrupt `0x80` and has 4 64 bit arguments in registers `RAX` to `RD
    * `RBX == 3` = get flags of inode, `RCX` = device, `RDX` = pointer to flagsOfInodeRequest struct
    * `RBX == 4` = get directory entry, `RCX` = device, `RDX` = pointer to directoryEntriesRequest struct
    * `RBX == 5` = get size of file, `RCX` = device, `RDX` = pointer to fileSizeRequest struct
+ * `RAX == 5` = pci device control
+   * `RBX == 0x01` = get native pci control, `RCX` = bus device function, `RDX` = pointer to buffer //not implemented
+   * `RBX == 0x02` = get pci device list, `RCX` = buffer element count, `RDX` = pointer to buffer
+   * `RBX == 0x03` = get pci device header, `RCX` = bus device function, `RDX` = pointer to buffer
+   * `RBX == 0x04` = allocate memory page, `RCX` = virtual address
+   * `RBX == 0x05` = free memory page, `RCX` = virtual address
+   * `RBX == 0x06` = virtual to physical address, `RCX` = virtual address, `RDX` = pointer to 64 bit result buffer
+   * `RBX == 0x07` = map virtual to physical address, `RCX` = virtual address, `RDX` = physical address
+   * `RBX == 0x10` = get driver status, `RCX` = bus device function, `RDX` = pointer to 64 bit result buffer
+   * `RBX == 0x11` = driver call 1, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x12` = driver call 2, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x13` = driver call 3, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x14` = driver call 4, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x15` = driver call 5, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x16` = driver call 6, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x17` = driver call 7, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x18` = driver call 8, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x19` = driver call 9, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x1A` = driver call A, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x1B` = driver call B, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x1C` = driver call C, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x1D` = driver call D, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x1E` = driver call E, `RCX` = bus device function, `RDX` = arg
+   * `RBX == 0x1F` = driver call F, `RCX` = bus device function, `RDX` = arg
+
+# Kernel driver interface
+ * USB
+ * Ethernet
+   * 1 = getConnectionStatus()
+     * `uint64_t status`
+   * 2 = getReceivedPacket()
+     * `uint64_t frameSize`
+     * `uint8_t buffer[2Ki]`
+   * 3 = transmitPacket()
+     * `uint64_t success`
+     * `uint8_t buffer[2Ki]`
+ * VGA
+   * 1 = getWidth()
+     * `uint64_t width`
+   * 2 = getHeight()
+     * `uint64_t height`
+   * 3 = setMode()
+     * `VGA::Mode mode`
+   * 4 = drawBuffer()
+     * `uint64_t start`
+     * `uint64_t bufferSize`
+     * `uint8_t buffer[1Ki]`

@@ -19,7 +19,18 @@ public:
     static uint64_t getRSP(void* interruptStack);
     static uint64_t getRIP(void* interruptStack);
     static void printStackTrace();
+    static void printStackTrace(uint64_t rbp);
     static void init();
+    static void setSectionArray(void*);
+    static void setSymbolSection(void*);
+    struct Symbol {
+        uint64_t value;
+        uint64_t size;
+        uint64_t flags;
+        const char* name;
+    };
+    static Symbol getSymbol(void* ptr);
+    static bool demangleSymbol(const char* source, char* buffer, uint64_t bufferSize);
 };
 
 }// namespace Kernel

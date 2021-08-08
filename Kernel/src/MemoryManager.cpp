@@ -13,7 +13,7 @@ MemoryManager* MemoryManager::getActiveHeap() {
 MemoryManager::MemoryManager(bool inKernel, uint64_t start, uint64_t pageCount) : inKernel(inKernel) {
     firstMemoryAvailabilityNode.next = nullptr;
     firstMemoryAvailabilityNode.prev = nullptr;
-    firstMemoryAvailabilityNode.startPagesBaseAddress = start & ~0xFFFu;
+    firstMemoryAvailabilityNode.startPagesBaseAddress = start & (~(pageSize - 1));
     firstMemoryAvailabilityNode.usedPages = 0;
     firstMemoryAvailabilityNode.freePages = pageCount;
 
@@ -128,7 +128,7 @@ void* MemoryManager::malloc(uint64_t size) {
             node->objectCount += 1;
 
             node->remainingSizeInPhysical -= realSize;
-
+            //kout << Hex(baseAddress) << " Address\n";
             return (void*) baseAddress;
         }
     }
@@ -154,6 +154,7 @@ void* MemoryManager::malloc(uint64_t size) {
             ptrData->pageCount = memoryPageCount;
         }
     }
+    //kout << Hex(returnAddress) << " RetAddress\n";
     return (void*) returnAddress;
 }
 
@@ -396,7 +397,7 @@ void MemoryManager::free(void* ptr) {
         } else {
             PageListNode* node = ptrData->node;
             uint64_t count = ptrData->pageCount;
-            for (count++; count > 0; --count) {
+            for (; count > 0; --count) {
                 if (!node)
                     return;
                 --node->objectCount;

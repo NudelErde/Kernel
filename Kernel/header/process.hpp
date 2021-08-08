@@ -85,6 +85,18 @@ public:
     static constexpr uint64_t maxSharedPages = 8;
     static constexpr uint64_t maxInterProcessMethods = 16;
 
+    struct UnsafeMap {
+        uint64_t vAddress;
+        uint64_t pAddress;
+        bool write;
+        bool cacheDisable;
+    };
+    struct UnsafeMapNode {
+        UnsafeMap map;
+        UnsafeMapNode* next;
+    };
+    UnsafeMapNode* unsafeMapping;
+
 private:
     MemoryPage* programPages;
     MemoryManager heap;

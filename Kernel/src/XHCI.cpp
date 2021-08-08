@@ -12,6 +12,14 @@ static void onSharedInterrupt(void* me) {
     self->onInterrupt();
 }
 
+uint64_t XhciUsbController::getStatus() {
+    return 1;
+};
+uint64_t XhciUsbController::getArgSize(uint8_t argNum) {
+    return 0;
+};
+void XhciUsbController::handleDriverCall(uint8_t argNum, void* arg){};
+
 void XhciUsbController::onInterrupt() {
     kout << "COCK\n";
     asm("hlt");

@@ -18,6 +18,8 @@ public:
 
     static Process* getProcessById(uint64_t pid);
     static Thread* getThreadById(uint64_t tid);
+    static void forceKillProcess(uint64_t pid);
+    static void forceKillThread(uint64_t tid);
 };
 
 }

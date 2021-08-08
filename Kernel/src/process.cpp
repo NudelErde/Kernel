@@ -8,6 +8,7 @@
 #include "debug.hpp"
 #include "elf.hpp"
 #include "interrupt.hpp"
+#include "units.hpp"
 
 namespace Kernel {
 
@@ -38,10 +39,10 @@ void onProcessSystemCall(uint64_t b, uint64_t c, uint64_t d) {
             const char* processPath = req->path;
             Device* device = Device::getDevice(req->deviceID);
             EXT4 ext(device, 0);
+            uint64_t thisTid = current->getTID();
             uint64_t pid = loadAndExecute(ext, processPath, req->argumentsArray, lastProcess->getPID(), req->loadWithDebug);
-            lastProcess->reload();
-            current->reload();
             req->pid = pid;
+            Thread::toKernel();
         }
             return;
         case 0x04:
@@ -270,9 +271,174 @@ void onEXT4Syscall(uint64_t b, uint64_t c, uint64_t d) {
     }
 }
 
+void onPCIDeviceCall(uint64_t b, uint64_t c, uint64_t d) {
+    switch (b) {
+        case 2: {
+            if (c == 0) {
+                *(uint64_t*) d = PCI::getDriverCount();
+                return;
+            }
+            uint64_t* buffer = (uint64_t*) d;
+            auto iter = PCI::getDrivers().getIterator();
+            for (uint64_t i = 0; i < c; ++i) {
+                if (iter.valid()) {
+                    buffer[i] = (*iter.get())->busDeviceFunction;
+                    if (!iter.next())
+                        return;
+                } else {
+                    return;
+                }
+            }
+            return;
+        }
+        case 3: {
+            bool cont = true;
+            for (auto iter = PCI::getDrivers().getIterator(); iter.valid() && cont; cont = iter.next()) {
+                auto dev = *iter.get();
+                if (dev->busDeviceFunction == c) {
+                    uint32_t header[16];
+                    for (uint8_t i = 0; i < 16; ++i) {
+                        header[i] = dev->device->readConfig(i * 4);
+                    }
+                    memcpy((void*) d, header, sizeof(header));
+                    return;
+                }
+            }
+            return;
+        }
+        case 4: {
+            c &= ~(pageSize - 1);
+            if (c <= 1Gi)
+                return;
+            uint64_t page = PhysicalMemoryManagment::getFreeUserPage();
+            PhysicalMemoryManagment::setUsed(page, true);
+            auto node = new Process::UnsafeMapNode();
+            node->map.cacheDisable = true;
+            node->map.write = true;
+            node->map.pAddress = page;
+            node->map.vAddress = c;
+            node->next = lastProcess->unsafeMapping;
+            lastProcess->unsafeMapping = node;
+            lastProcess->reload();
+            return;
+        }
+        case 5: {
+            c &= ~(pageSize - 1);
+            if (c <= 1Gi)
+                return;
+            if (lastProcess->unsafeMapping && lastProcess->unsafeMapping->map.vAddress == c) {
+                lastProcess->unsafeMapping = nullptr;
+            }
+            for (auto node = lastProcess->unsafeMapping; node->next; node = node->next) {
+                if (node->next->map.vAddress == c) {
+                    node = node->next->next;
+                }
+            }
+            lastProcess->unload();
+            lastProcess->reload();
+            return;
+        }
+        case 6: {
+            *(uint64_t*) d = MemoryPage::getPhysicalAddressFromVirtual(c);
+            return;
+        }
+        case 7: {
+            c &= ~(pageSize - 1);
+            d &= ~(pageSize - 1);
+            if (c <= 1Gi)
+                return;
+            auto node = new Process::UnsafeMapNode();
+            node->map.cacheDisable = true;
+            node->map.write = true;
+            node->map.vAddress = c;
+            node->map.pAddress = d;
+            node->next = lastProcess->unsafeMapping;
+            lastProcess->unsafeMapping = node;
+            lastProcess->reload();
+            return;
+        }
+        case 0x10: {
+            bool cont = true;
+            for (auto iter = PCI::getDrivers().getIterator(); iter.valid() && cont; cont = iter.next()) {
+                auto dev = *iter.get();
+                if (dev->busDeviceFunction == c) {
+                    *(uint64_t*) d = dev->getStatus();
+                }
+            }
+            return;
+        }
+        case 0x11:
+        case 0x12:
+        case 0x13:
+        case 0x14:
+        case 0x15:
+        case 0x16:
+        case 0x17:
+        case 0x18:
+        case 0x19:
+        case 0x1A:
+        case 0x1B:
+        case 0x1C:
+        case 0x1D:
+        case 0x1E:
+        case 0x1F: {
+            uint64_t id = b - 0x10;
+            bool cont = true;
+            for (auto iter = PCI::getDrivers().getIterator(); iter.valid() && cont; cont = iter.next()) {
+                auto dev = *iter.get();
+                if (dev->busDeviceFunction == c) {
+                    uint64_t argSize = dev->getArgSize(b);
+                    void* ptr = nullptr;
+
+                    getKernelMemoryManager().reload();
+                    if (argSize != 0) {// copy from process in kernel
+                        ptr = getKernelMemoryManager().malloc(argSize);
+                        uint8_t buffer[256];
+                        for (uint64_t i = 0; i < argSize; i += sizeof(buffer)) {
+                            lastProcess->reload();
+                            current->reload();
+                            uint64_t cpSize = (argSize - i);
+                            if (cpSize > sizeof(buffer))
+                                cpSize = sizeof(buffer);
+                            memcpy(buffer, (void*) d, cpSize);
+                            getKernelMemoryManager().reload();
+                            memcpy(ptr, buffer, cpSize);
+                        }
+                    }
+
+                    dev->handleDriverCall(id, ptr);
+
+                    if (argSize != 0) {// copy from kernel to process
+                        uint8_t buffer[256];
+                        for (uint64_t i = 0; i < argSize; i += sizeof(buffer)) {
+                            uint64_t cpSize = (argSize - i);
+                            if (cpSize > sizeof(buffer))
+                                cpSize = sizeof(buffer);
+
+                            getKernelMemoryManager().reload();
+
+                            memcpy(buffer, ptr, cpSize);
+
+                            lastProcess->reload();
+                            current->reload();
+
+                            memcpy((void*) d, buffer, cpSize);
+                        }
+                        getKernelMemoryManager().reload();
+                        getKernelMemoryManager().free(ptr);
+                    }
+                    lastProcess->reload();
+                    current->reload();
+                }
+            }
+            return;
+        }
+    }
+}
+
 extern "C" void onSystemCall(uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
-    if (a <= 4 && a >= 1) {
-        constexpr void (*functions[])(uint64_t, uint64_t, uint64_t){onProcessSystemCall, onMassStorageSystemCall, onBasicIOCall, onEXT4Syscall};
+    constexpr void (*functions[])(uint64_t, uint64_t, uint64_t){onProcessSystemCall, onMassStorageSystemCall, onBasicIOCall, onEXT4Syscall, onPCIDeviceCall};
+    if (a <= sizeof(functions) / sizeof(*functions) && a >= 1) {
         functions[a - 1](b, c, d);
     }
 }
@@ -458,6 +624,13 @@ void Process::unload() {
             sharedPages[i].pageBuffer.page.unmap();
         }
     }
+    for (auto ptr = unsafeMapping; ptr; ptr = ptr->next) {
+        if (MemoryPage::getPhysicalAddressFromVirtual(ptr->map.vAddress) == ptr->map.pAddress) {
+            MemoryPage page(ptr->map.pAddress, true);
+            page.mapTo(ptr->map.vAddress, false, false);
+            page.unmap();
+        }
+    }
     heap.unmap();
 }
 
@@ -471,6 +644,10 @@ void Process::reload() {
         }
     }
     heap.reload();
+    for (auto ptr = unsafeMapping; ptr; ptr = ptr->next) {
+        MemoryPage page(ptr->map.pAddress, true);
+        page.mapTo(ptr->map.vAddress, ptr->map.write, true, ptr->map.cacheDisable, ptr->map.cacheDisable);
+    }
     lastProcess = this;
 }
 
@@ -518,6 +695,15 @@ void Thread::toProcess() {
         debugOnStart = false;
         KTODO("process debugging");
         Debug::setBreakpoint(3, currentCodeAddress, Debug::Condition::Execute, [](uint64_t interruptStackBase) {kout << "Stuff\n"; return false; });
+    }
+    if (pid == 2) {
+        //*(uint8_t*) currentCodeAddress = 0xCC;// int3
+        if (*(uint8_t*) (currentCodeAddress + 3) == 0xe8) {
+            //uint32_t mainAddress = currentCodeAddress + 3;
+            //mainAddress += 5;
+            //mainAddress += *(uint32_t*) (currentCodeAddress + 4);
+            //kout << Hex(mainAddress);
+        }
     }
     asm(R"(
     mov %0, %%rdi

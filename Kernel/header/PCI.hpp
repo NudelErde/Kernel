@@ -38,6 +38,40 @@ struct PCIDeviceData {
     uint8_t function;
 };
 
+class PCI;
+
+class PCIDriver {
+public:
+    virtual uint64_t getStatus() = 0;
+    virtual uint64_t getArgSize(uint8_t argNum) = 0;
+    virtual void handleDriverCall(uint8_t argNum, void* arg) = 0;
+    uint64_t busDeviceFunction;
+    PCI* device;
+};
+
+class PCIDefaultDriver : public PCIDriver {
+public:
+    inline uint64_t getStatus() override { return 0; }
+    inline uint64_t getArgSize(uint8_t argNum) override {
+        if (argNum == 1 || argNum == 2) return sizeof(uint64_t);
+        return 0;
+    }
+    inline void handleDriverCall(uint8_t argNum, void* arg) {
+        switch (argNum) {
+            case 1:
+                (*(uint64_t*) arg) = pid;
+                return;
+            case 2:
+                pid = (*(uint64_t*) arg);
+                return;
+            default:
+                return;
+        }
+    }
+
+    uint64_t pid;
+};
+
 class PCI {
 public:
     struct BAR {
@@ -101,5 +135,9 @@ public:
     static uint8_t readBAR8(uint64_t BAR, uint32_t offset);
     static uint16_t readBAR16(uint64_t BAR, uint32_t offset);
     static uint32_t readBAR32(uint64_t BAR, uint32_t offset);
+    static LinkedList<PCIDriver*>& getDrivers();
+    static uint64_t getDriverCount();
+    static void setDriverCount(uint64_t count);
+    static void setDrivers(LinkedList<PCIDriver*>&&);
 };
 }// namespace Kernel

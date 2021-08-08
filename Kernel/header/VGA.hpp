@@ -5,7 +5,7 @@
 
 namespace Kernel {
 
-class VGA {
+class VGA : public PCIDriver {
 public:
     struct Mode {
         void (*setPixel)(VGA*, uint64_t, uint64_t, uint8_t);
@@ -79,6 +79,10 @@ public:
 
     inline uint64_t getWidth() const { return width; }
     inline uint64_t getHeight() const { return height; }
+
+    uint64_t getStatus() override;
+    uint64_t getArgSize(uint8_t argNum) override;
+    void handleDriverCall(uint8_t argNum, void* arg) override;
 
 private:
     static uint64_t readPort(uint32_t port, uint64_t index);

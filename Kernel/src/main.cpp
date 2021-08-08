@@ -52,9 +52,14 @@ void configDevice(const PCICommonHeader& header, PCI* dev) {
     }
 }
 
-void loadPCI(bool withText) {
+LinkedList<PCIDriver*> loadPCI(bool withText) {
+    usb = nullptr;
+    vga = nullptr;
+    ethernet = nullptr;
     LinkedList<PCI> pciDevices = PCI::checkAllBuses();
+    LinkedList<PCIDriver*> drivers;
     bool cont = true;
+    uint64_t driverCount = 0;
     if (withText) kout << "PCI devices: \n";
     for (auto iter = pciDevices.getIterator(); iter.valid() && cont; cont = iter.next()) {
         auto d = iter.get();
@@ -70,21 +75,37 @@ void loadPCI(bool withText) {
             continue;
         }
 
+        PCIDriver* driver = nullptr;
+
         if (header.classCode == 0x01 && header.subclass == 0x01) {
             ATA::openController(d->bus, d->device, d->function, header);
         } else if (header.classCode == 0x01 && header.subclass == 0x06 && header.progIF == 0x01) {
             AHCI::openController(d, header);
         } else if (header.classCode == 0x0C && header.subclass == 0x03) {
             usb = USB::openController(d, header);
+            driver = usb;
         } else if (header.classCode == 0x02 && header.subclass == 0x00) {
             ethernet = Ethernet::openController(d, header);
+            driver = ethernet;
         } else if (header.classCode == 0x03 && header.subclass == 0x00 && header.progIF == 0x00) {
-            vga = VGA::openController(d, header);
+            //vga = VGA::openController(d, header);
+            driver = vga;
         } else {
             if (header.classCode == 0x06)
                 continue;// skip bridge devices
         }
+
+        if (!driver) {
+            driver = new PCIDefaultDriver();
+        }
+
+        driver->busDeviceFunction = (((uint64_t) d->bus) << 16) | (((uint64_t) d->device) << 8) | (((uint64_t) d->function) << 0);
+        driver->device = d;
+        drivers.getIterator().insert(driver);
+        driverCount++;
     }
+    PCI::setDriverCount(driverCount);
+    return drivers;
 }
 
 void kern_start() {
@@ -92,7 +113,8 @@ void kern_start() {
     KernelOut::init();
     Print::setColor(Print::Color::WHITE, Print::Color::BLACK);
     Print::clear();
-    kout << "System start\n";
+    kout << setSerial(Serial(0x3F8)) << "System start\n";
+    Input::init(Input::InputMode::SERIAL);
     get_multiboot_infos();
     Interrupt::init();
     initExceptionHandlers();
@@ -115,7 +137,7 @@ void kern_start() {
     Scheduler::init();
     Process::init();
 
-    loadPCI(true);
+    PCI::setDrivers(loadPCI(false));
     PS2::init();
     if (vga) {
         vga->clear();
@@ -143,12 +165,13 @@ void kern_start() {
         }
         kout << mainText << "640x480 mode\n";
     }
+
     if (uint8_t ps2 = PS2::getPorts(); ps2) {
         for (uint8_t i = 0; i < 2; ++i) {
             if (ps2 & (0b1 << i)) {
                 if (PS2::getType(i) == 0xAB83) {
                     // keyboard!
-                    Input::init(Input::InputMode::PS2);
+                    //Input::init(Input::InputMode::PS2);
                     break;
                 }
             }
@@ -160,7 +183,6 @@ void kern_start() {
     if (count == 0) {
         kout << "No devices found\n";
         for (;;) {
-            kout << "Interrupt\n";
             asm("hlt");
         }
     }
@@ -168,19 +190,35 @@ void kern_start() {
     Device* hardDisk = Device::getDevice(Device::getSystemDevice());
 
     EXT4 ext(hardDisk, 0);
-    uint64_t inode = ext.findFileINode("/startup.elf");
-    if (inode == 0) {
-        kout << "No file named '/startup.elf' found.\n";
-        for (;;) {
-            kout << "Interrupt\n";
-            asm("hlt");
-        }
+
+    uint64_t inodeID = ext.findFileINode("/start");
+    if (!inodeID) {
+        kout << "'/start' directory not found.\n";
+        return;
     }
-    const char* args = "/startup.elf\0osboot\0";
-    loadAndExecute(ext, args, args, 0, false); /*filename is first arg*/
+    auto inode = ext.getINode(inodeID);
+    ext.iterateDirectory(
+            inode, [](void* extPtr, const EXT4::DirEntry& entry) -> bool {
+                EXT4& ext = *(EXT4*) extPtr;
+                auto dirInode = ext.getINode(entry.inode);
+                if (ext.getFileType(dirInode) == EXT4::FileType::REGULAR_FILE) {
+                    char buffer[512];// will be: "[filename]\0boot\0"
+                    memcpy(buffer, "/start/", 7);
+                    memcpy(buffer + 7, entry.name, entry.nameSize);
+                    buffer[7 + entry.nameSize] = 0;
+                    memcpy(buffer + 7 + entry.nameSize + 1, "boot", 4);
+                    buffer[7 + entry.nameSize + 5] = 0;
+                    buffer[7 + entry.nameSize + 6] = 0;
+                    loadAndExecute(ext, buffer, buffer, 0, false);
+                }
+                return false;
+            },
+            &ext);
     Scheduler::run();
 }
 
 extern "C" void __kernel_main() {
     kern_start();
+    for (;;)
+        asm("hlt");
 }
