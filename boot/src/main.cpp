@@ -8,7 +8,12 @@ void printKernelOut(const char* str) {
     }
 }
 
+void onWrite(char ch) {
+}
+
 void startByDirEntry(DirectoryEntry* entry, const char* dirname) {
+    if (entry->name[0] == '.')
+        return;
     char buffer[512];
     uint64_t index = 0;
     for (const char* ptr = dirname; *ptr; ++ptr) {
@@ -17,8 +22,8 @@ void startByDirEntry(DirectoryEntry* entry, const char* dirname) {
     buffer[index++] = '/';
     for (const char* ptr = entry->name; *ptr; ++ptr) {
         buffer[index++] = *ptr;
-        free(entry->name);
     }
+    //free(entry->name);
     buffer[index++] = 0;
     buffer[index++] = 0;
 
@@ -29,6 +34,9 @@ int main() {
     systemDevice = getSystemDevice();
     uint64_t shPid = createProcess(systemDevice, "/lib/badsh.elf", "/lib/badsh.elf\0", false);
     uint64_t inode = getINodeOfPath(systemDevice, "/shared");
+
+    //registerInterProcessMethod(1, 1, (uint64_t) &onWrite, false);
+
     constexpr uint64_t dirBufferSize = 8;
     DirectoryEntry dirBuffer[dirBufferSize];
     uint64_t entryCount = getDirectoryEntriesOfINode(systemDevice, inode, dirBufferSize, dirBuffer);
@@ -42,8 +50,9 @@ int main() {
         for (uint64_t i = dirBufferSize; i < entryCount; ++i) {
             startByDirEntry(&allocatedBuffer[i], "/shared");
         }
-        free(allocatedBuffer);
+        //free(allocatedBuffer);
     }
+    printKernelOut("uwu");
     while (true) {
         sleep(1000);
     }
