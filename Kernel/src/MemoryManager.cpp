@@ -21,7 +21,7 @@ MemoryManager::MemoryManager(bool inKernel, uint64_t start, uint64_t pageCount) 
     firstPageNode.next = nullptr;
     firstPageNode.page = MemoryPage(getFreePhysicalPage());
     uint64_t virtualPage = findFreeVirtualPages(1);
-    firstPageNode.page.mapTo(virtualPage, true, inKernel);
+    firstPageNode.page.mapTo(virtualPage, true, !inKernel);
     firstPageNode.exists = true;
     firstPageNode.remainingSizeInPhysical = pageSize;
     firstPageNode.index = 0;

@@ -199,10 +199,10 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
         }
     }
     for (uint64_t iter = 0; iter < pagesIndex; ++iter) {
-        uint8_t flag = programPagesPermissions[pagesIndex];
-        bool pageExecuteable = flag & 0x1;
-        bool pageWriteable = flag & 0x2;
-        bool pageReadable = flag & 0x4;
+        uint8_t flag = programPagesPermissions[iter];
+        bool pageExecuteable = flag & (0b1 << 0);
+        bool pageWriteable = flag & (0b1 << 1);
+        bool pageReadable = flag & (0b1 << 2);
         programPages[iter].unmap();
         programPages[iter].softmap(programPages[iter].getVirtualAddress() - tempMap, pageWriteable, true);// todo: set permission
     }
@@ -275,10 +275,13 @@ uint64_t loadAndExecute(EXT4& ext, const char* str, const char* arguments, uint6
         getKernelMemoryManager().reload();
     }
     proc.setArgumentPointer(argumentOnHeap);
+
+    uint64_t pid = proc.getPID();
+
     Scheduler::addThread((Thread &&) thread);
     Scheduler::addProcess((Process &&) proc);
 
-    return proc.getPID();
+    return pid;
 }
 
 }// namespace Kernel

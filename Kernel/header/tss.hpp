@@ -24,4 +24,5 @@ static_assert(sizeof(TSS) == 104);
 
 void setupTss(uint64_t gdtAddress, uint64_t num);
 TSS* getTss();
+uint8_t getCPL();
 }// namespace Kernel

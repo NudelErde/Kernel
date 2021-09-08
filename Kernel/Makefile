@@ -26,5 +26,6 @@ $(asm_object_files): build/asm_object_files/%.o : src/%.asm
 build-x86_64: $(object_files)
 	mkdir -p dist && \
 	x86_64-elf-ld -n -o dist/kernel.bin -T targets/linker.ld $(object_files) && \
+	objdump -dC dist/kernel.bin > dist/kernel.asm && \
 	cp dist/kernel.bin targets/iso/boot/kernel.bin && \
 	grub-mkrescue /usr/lib/grub/i386-pc -o dist/kernel.iso targets/iso

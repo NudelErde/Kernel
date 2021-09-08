@@ -275,9 +275,10 @@ static bool readRSDT(uint8_t* rsdtPointer) {
     }
     ACPISDTHeader* header = (ACPISDTHeader*) rsdtPointer;
     uint64_t entryCount = (header->Length - sizeof(ACPISDTHeader)) / sizeof(uint32_t);
-    if ((*(uint32_t*) rsdtPointer) != 'TDSR' && (*(uint32_t*) rsdtPointer) != 'TDSX') {
-        kout << "RSDT 0x" << Hex(rsdtPointer) << '\n'
-             << HexDump(rsdtPointer, sizeof(ACPISDTHeader)) << '\n';
+    if ((*(uint32_t*) rsdtPointer) != 'TDSR' && (*(uint32_t*) rsdtPointer) != 'TDSX') {// signature reversed
+        kout << "Invalid RSDT\n";
+        //kout << "RSDT 0x" << Hex(rsdtPointer) << '\n'
+        //     << HexDump(rsdtPointer, sizeof(ACPISDTHeader)) << '\n';
         return false;
     }
     for (uint64_t i = 0; i < entryCount; ++i) {
@@ -308,9 +309,10 @@ static bool readXSDT(uint8_t* xsdtPointer) {
     }
     ACPISDTHeader* header = (ACPISDTHeader*) xsdtPointer;
     uint64_t entryCount = (header->Length - sizeof(ACPISDTHeader)) / sizeof(uint64_t);
-    if ((*(uint32_t*) xsdtPointer) != 'TDSR' && (*(uint32_t*) xsdtPointer) != 'TDSX') {
-        kout << "XSDT 0x" << Hex(xsdtPointer) << '\n'
-             << HexDump(xsdtPointer, sizeof(ACPISDTHeader)) << '\n';
+    if ((*(uint32_t*) xsdtPointer) != 'TDSR' && (*(uint32_t*) xsdtPointer) != 'TDSX') {// signature reversed
+        kout << "Invalid XSDT\n";
+        //kout << "XSDT 0x" << Hex(xsdtPointer) << '\n'
+        //     << HexDump(xsdtPointer, sizeof(ACPISDTHeader)) << '\n';
         return false;
     }
     for (uint64_t i = 0; i < entryCount; ++i) {

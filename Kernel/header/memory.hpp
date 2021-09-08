@@ -77,6 +77,12 @@ public:
 
     static uint64_t createNewPageTable();
     static uint64_t getPhysicalAddressFromVirtual(uint64_t address);
+    static uint64_t getFlagsForVirtualPage(uint64_t address);
+
+    [[nodiscard]] inline bool isWriteable() const { return writeable; }
+    [[nodiscard]] inline bool isUserAccess() const { return userAccess; }
+    [[nodiscard]] inline bool isCacheDisable() const { return cacheDisable; }
+    [[nodiscard]] inline bool isWriteThrough() const { return writeThrough; }
 
 private:
     uint64_t physicalAddress{};

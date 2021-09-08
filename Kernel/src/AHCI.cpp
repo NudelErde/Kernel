@@ -3,6 +3,7 @@
 #include "SharedInterrupts.hpp"
 #include "units.hpp"
 #include "util.hpp"
+#include "wait.hpp"
 
 namespace Kernel {
 
@@ -127,7 +128,7 @@ struct AHCI::Port {
     uint32_t taskFileData;
     uint32_t signature;
     uint32_t sataStatus;
-    uint32_t sataControll;
+    uint32_t sataControl;
     uint32_t sataError;
     uint32_t sataActive;
     uint32_t commandIssue;
@@ -249,13 +250,24 @@ void AHCI::AHCIDevice::stop() {
 }
 
 void AHCI::AHCIDevice::setup() {
+    //reset
+    port->sataControl = 0b1;
+    sleep(1);
+    port->sataControl = 0b0;
+
+    for (uint32_t i = 0; i < 0xFFFF; ++i) {
+        if ((port->sataStatus & 0b1111) == 3) {
+            break;
+        }
+    }
+
     uint8_t devicePowerState = (port->sataStatus >> 8) & 0b1111;
     uint8_t deviceDetection = (port->sataStatus & 0b1111);
     if (deviceDetection != 0b11)// present and connected
         return;
     if (devicePowerState != 1)// active power state
         return;
-
+    port->sataError = ~0;
     stop();
 
     uint8_t commandSlots = ((controller->capabilities >> 8) & 0b11111) + 1;
@@ -303,7 +315,9 @@ void AHCI::AHCIDevice::setup() {
 
     start();
 
-    sendIdentify();
+    if (!sendIdentify()) {
+        return;
+    }
 
     uint64_t id = Device::addDevice(this);
     if (type == DeviceType::SATA && sectorCount > 0) {
@@ -311,10 +325,10 @@ void AHCI::AHCIDevice::setup() {
     }
 }
 
-void AHCI::AHCIDevice::sendIdentify() {
+bool AHCI::AHCIDevice::sendIdentify() {
     uint64_t slotID = findSlot();
     if (slotID >= 32)
-        return;
+        return false;
     CommandSlot* slot = slotID + commandList;
     CommandTable* table = slot->getCommandTable();
     FisH2D* fis = (FisH2D*) &(table->commandFIS);
@@ -330,10 +344,10 @@ void AHCI::AHCIDevice::sendIdentify() {
     slot->prdByteCount = 512;
     slot->commandFISLength = sizeof(FisH2D) / sizeof(uint32_t);
     if (!waitForFinish())
-        return;
+        return false;
     port->commandIssue |= 0b1 << slotID;// execute command
     if (!waitForTask(slotID))
-        return;
+        return false;
 
     constexpr uint8_t IdentitfyMaxLBAExt = 200;
     constexpr uint8_t IdentitfyMaxLBA = 120;
@@ -363,12 +377,16 @@ void AHCI::AHCIDevice::sendIdentify() {
             type = DeviceType::UNKNOWN;
             break;
     }
+    return true;
 }
 
 bool AHCI::AHCIDevice::waitForTask(uint32_t slot) {
     while (true) {
         if (!(port->commandIssue & (0b1 << slot)))
             return true;
+        if (port->sataError) {
+            return false;
+        }
         if (port->taskFileData & 0b1)
             return false;// error
     }
@@ -376,10 +394,8 @@ bool AHCI::AHCIDevice::waitForTask(uint32_t slot) {
 
 bool AHCI::AHCIDevice::waitForFinish() {
     while (true) {
-        if (!(port->taskFileData & (0b10001) << 3))
-            return true;
-        if (port->taskFileData & 0b1)
-            return false;// error
+        if (!(port->taskFileData & (0b10001) << 3)) return true;
+        if (port->taskFileData & 0b1) return false;// error
     }
 }
 
@@ -617,18 +633,23 @@ void AHCI::tryDevice(uint8_t device) {
     uint32_t* DBAR = (uint32_t*) (ABAR.virtualAddress + 0x100 + (0x80 * device));
     AHCIDevice* dev = new AHCIDevice(DBAR, this);
     devices[device] = dev;
+    kout << Hex(device) << '\n';
     dev->setup();
 }
 
 void AHCI::setup() {
     ABAR[1] = (0b1 << 31) | 0b10;
+    while (ABAR[1] & 0b1) {}// wait for reset
+    ABAR[1] = (0b1 << 31);
     portsAvailable = ABAR[3];
     version = ABAR[4];
     capabilities = ABAR[0];
     capabilities2 = ABAR[9];
 
     uint32_t bohc = ABAR[10];
+
     if ((capabilities2 & 0b1) && (bohc & 0b1)) {
+        kout << "BIOS Handoff\n";
         bohc |= 0b10;
         ABAR[10] = bohc;
         while (true) {

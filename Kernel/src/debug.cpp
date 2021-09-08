@@ -589,7 +589,9 @@ void Debug::printDebugInfo(void* stackPointer) {
             kout << "Program name: " << programName << ':' << Process::getLastLoadedProcess()->getPID() << ':' << Thread::getCurrent()->getPID() << ':' << Thread::getCurrent()->getTID() << '\n';
             kout << "Static program pages: \n";
             for (uint64_t i = 0; i < Process::getLastLoadedProcess()->count; ++i) {
-                kout << Hex(Process::getLastLoadedProcess()->programPages[i].getVirtualAddress()) << '\n';
+                kout << Hex(Process::getLastLoadedProcess()->programPages[i].getVirtualAddress()) << ':';
+                kout << Hex(MemoryPage::getPhysicalAddressFromVirtual(Process::getLastLoadedProcess()->programPages[i].getVirtualAddress())) << ':';
+                kout << BitList(MemoryPage::getFlagsForVirtualPage(Process::getLastLoadedProcess()->programPages[i].getVirtualAddress())) << '\n';
             }
         }
     }

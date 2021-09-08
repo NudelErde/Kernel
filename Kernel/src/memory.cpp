@@ -388,6 +388,57 @@ uint64_t PhysicalMemoryManagment::getAnyPage() {
     return result;
 }
 
+uint64_t MemoryPage::getFlagsForVirtualPage(uint64_t address) {
+    if (address < 1Gi)
+        return 0;// bruh dis kernel memory
+    uint64_t offset = address & (pageSize - 1);
+    address &= ~(pageSize - 1);
+    uint64_t l4Index = ((address >> 39) & 0x1FF);// to 9 bit
+    uint64_t l3Index = ((address >> 30) & 0x1FF);// to 9 bit
+    uint64_t l2Index = ((address >> 21) & 0x1FF);// to 9 bit
+    uint64_t l1Index = ((address >> 12) & 0x1FF);// to 9 bit
+
+    uint64_t result = 0;
+
+    uint64_t cr3;
+    asm("mov %%cr3, %0"
+        : "=a"(cr3));
+
+    result <<= 12;
+    result |= (cr3 & 0xFFF);
+
+    PageTable* baseTable = (PageTable*) (cr3 & ~0xFFF);
+
+
+    volatile PageTableElement* l4Element = &baseTable->elements[l4Index];
+    result <<= 12;
+    result |= (l4Element->address & 0xFFF);
+    if (!l4Element->flags.present)
+        return 0;
+    PageTable* l3Table = (PageTable*) (l4Element->address & ~0xFFF);
+
+    volatile PageTableElement* l3Element = &l3Table->elements[l3Index];
+    result <<= 12;
+    result |= (l3Element->address & 0xFFF);
+    if (!l3Element->flags.present)
+        return 0;
+    PageTable* l2Table = (PageTable*) (l3Element->address & ~0xFFF);
+
+    volatile PageTableElement* l2Element = &l2Table->elements[l2Index];
+    result <<= 12;
+    result |= (l2Element->address & 0xFFF);
+    if (!l2Element->flags.present)
+        return 0;
+    PageTable* l1Table = (PageTable*) (l2Element->address & ~0xFFF);
+
+    volatile PageTableElement* l1Element = &l1Table->elements[l1Index];
+    result <<= 12;
+    result |= (l1Element->address & 0xFFF);
+    if (!l1Element->flags.present)
+        return 0;
+    return result;
+}
+
 uint64_t MemoryPage::getPhysicalAddressFromVirtual(uint64_t address) {
     if (address < 1Gi)
         return address;// low memory is identity mapped
@@ -456,6 +507,31 @@ void MemoryPage::softmap(uint64_t virtualAddress, bool writeable, bool userAcces
     MemoryPage::writeThrough = writeThrough;
 }
 
+static void checkPageFlags(volatile PageTableElement* element, bool writeable, bool userAccess, bool cacheDisable, bool writeThrough) {
+    bool changed = false;
+
+    if (!element->flags.writeEnable && writeable) {
+        changed = true;
+        element->flags.writeEnable = true;
+    }
+    if (!element->flags.allowUserAccess && userAccess) {
+        changed = true;
+        element->flags.allowUserAccess = true;
+    }
+    if (!element->flags.cacheDisable && cacheDisable) {
+        changed = true;
+        element->flags.cacheDisable = true;
+    }
+    if (!element->flags.writeThrough && writeThrough) {
+        changed = true;
+        element->flags.writeThrough = true;
+    }
+
+    if (changed) {
+        reloadPageTables((uint64_t) element);
+    }
+}
+
 bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess, bool cacheDisable, bool writeThrough) {
     virtualAddress &= 0xFFFFFFFFF000;                   // 48 bit virtual address max and page start
     uint64_t l4Index = ((virtualAddress >> 39) & 0x1FF);// to 9 bit
@@ -477,6 +553,8 @@ bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess,
         l4Element->flags.zero = 0;
         reloadPageTables((uint64_t) l4Element);
     }
+    checkPageFlags(l4Element, writeable, userAccess, cacheDisable, writeThrough);
+
     PageTable* l3Table = (PageTable*) (l4Element->address & ~0xFFF);
     volatile PageTableElement* l3Element = &l3Table->elements[l3Index];
     if (!l3Element->flags.present) {
@@ -492,6 +570,8 @@ bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess,
         l3Element->flags.zero = 0;
         reloadPageTables((uint64_t) l3Element);
     }
+    checkPageFlags(l3Element, writeable, userAccess, cacheDisable, writeThrough);
+
     PageTable* l2Table = (PageTable*) (l3Element->address & ~0xFFF);
     volatile PageTableElement* l2Element = &l2Table->elements[l2Index];
     if (!l2Element->flags.present) {
@@ -507,10 +587,10 @@ bool MemoryPage::mapTo(uint64_t virtualAddress, bool writeable, bool userAccess,
         l2Element->flags.zero = 0;
         reloadPageTables((uint64_t) l2Element);
     }
-
     if (l2Element->address & 0b10000000) {// this is 2MB page do not use!
         return false;
     }
+    checkPageFlags(l2Element, writeable, userAccess, cacheDisable, writeThrough);
 
     PageTable* l1Table = (PageTable*) (l2Element->address & ~0xFFF);
     volatile PageTableElement* l1Element = &l1Table->elements[l1Index];
@@ -559,6 +639,11 @@ MemoryPage::MemoryPage(MemoryPage&& other) noexcept {
     valid = other.valid;
     destruct = other.destruct;
 
+    writeable = other.writeable;
+    userAccess = other.userAccess;
+    cacheDisable = other.cacheDisable;
+    writeThrough = other.writeThrough;
+
     other.destruct = false;
 }
 MemoryPage& MemoryPage::operator=(MemoryPage&& other) noexcept {
@@ -571,6 +656,11 @@ MemoryPage& MemoryPage::operator=(MemoryPage&& other) noexcept {
     entry = other.entry;
     valid = other.valid;
     destruct = other.destruct;
+
+    writeable = other.writeable;
+    userAccess = other.userAccess;
+    cacheDisable = other.cacheDisable;
+    writeThrough = other.writeThrough;
 
     other.destruct = false;
 

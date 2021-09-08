@@ -11,6 +11,8 @@ namespace Kernel {
 
 constexpr uint64_t stackPageCount = 8;
 
+extern "C" void jmpAndChangePrivilegeLevel(uint64_t targetStack, uint64_t targetCode, uint64_t targetStackSegment, uint64_t targetCodeSegment, uint64_t targetFlags);
+
 class Thread {
     MemoryPage stack[stackPageCount];
     uint64_t currentCodeAddress;
@@ -20,6 +22,7 @@ class Thread {
     uint64_t earliestSchedule{};
     uint64_t waitingForExitValue{};
     uint8_t locks[32];
+    uint64_t ring;
     bool markedProcess{};
     bool enterIPM{};
     bool exitIPM{};
@@ -43,6 +46,7 @@ public:
     inline uint64_t getEarliestSchedule() { return earliestSchedule; }
     inline uint64_t getPID() { return pid; }
     inline uint64_t getTID() { return tid; }
+    inline uint64_t getRing() { return ring; }
     inline uint64_t getStackBaseAddress() { return stack[0].getVirtualAddress(); }
 
     inline void setEnterIPM() { enterIPM = true; }

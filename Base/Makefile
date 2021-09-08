@@ -19,3 +19,4 @@ $(cpp_object_files): build/cpp_object_files/%.o : src/%.cpp
 .PHONY: build
 build: $(object_files)
 	x86_64-elf-ld -n -o $(program_dir)/$(notdir $(program_dir)).elf -T linker.ld $(object_files)
+	objdump -dC $(program_dir)/$(notdir $(program_dir)).elf > $(program_dir)/$(notdir $(program_dir)).asm

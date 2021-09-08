@@ -16,6 +16,15 @@ TSS* getTss() {
     return tssPtr;
 }
 
+uint8_t getCPL() {
+    uint32_t cs;
+    asm(R"(
+        mov %%cs, %0
+        )"
+        : "=a"(cs));
+    return cs & 0b11;
+}
+
 void setupTss(uint64_t gdtAddress, uint64_t num) {
     struct gdtEntry {
         uint16_t limit_low;
@@ -50,7 +59,7 @@ void setupTss(uint64_t gdtAddress, uint64_t num) {
     tss.ist2 = ((uint64_t) panicStack) + sizeof(panicStack) - 1;
     tss.rsp0 = ((uint64_t) kernelPriv0Stack) + sizeof(kernelPriv0Stack) - 1;
 
-    uint16_t selector = 0b10000;// load tss
+    uint16_t selector = (num << 3) | 0b000;// load tss
     asm(R"(
             mov %0, %%ax
             ltr %%ax

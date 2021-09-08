@@ -160,6 +160,10 @@ gdt64:
 	dq 0 ; zero entry
 .code_segment: equ $ - gdt64
 	dq (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53) ; code segment
+.code_segment_ring3: equ $ - gdt64
+	dq (1 << 43) | (1 << 44) | (1 << 45) | (1 << 46) | (1 << 47) | (1 << 53) ; ring 3 code segment
+.data_segment_ring3: equ $ - gdt64
+	dq (1 << 41) | (1 << 44) | (1 << 45) | (1 << 46) | (1 << 47)
 .task_state_segment: equ $ - gdt64
 	dq 0
 	dq 0

@@ -3,6 +3,7 @@ global __process_toKernel
 global __systemHandler
 extern onSystemCall
 extern onSystemCallExit
+extern jmpAndChangePrivilegeLevel
 
 section .text
 bits 64
@@ -18,6 +19,8 @@ __systemHandler:
 
     jmp onSystemCallExit ; the c interrupt handler function will return from interrupt
 
+;extern "C" void __process_toProcess(uint64_t rip, uint64_t rsp, uint64_t inProcessPointer, uint64_t targetStackSegment, uint64_t targetCodeSegment)
+;                                             rdi           rsi            rdx                                      rcx                          r8 r9
 __process_toProcess:
     push rax ; save registers
     push rbx
@@ -36,12 +39,16 @@ __process_toProcess:
     push r15
     pushfq
 
+
     mov qword[__kernel_stack_pointer], rsp ; store kernel stack pointer
-    mov rsp, rdx ; load process stack pointer
-    mov byte[rbx], $1 ; rbx is pointer to inProcess ; set in process after loading process stack pointer
-    mov eax, $0
-    cpuid
-    jmp rdi ; jump to process code
+    
+    xchg rdi, rsi ; rip -> targetCode & rsp -> targetStack
+    mov byte[rdx], $1
+    mov rdx, rcx
+    mov rcx, r8
+    mov r8, qword[rsp] ; flags -> targetFlags
+                                   ;                  rdi                  rsi                          rdx                         rcx                    r8 r9
+    jmp jmpAndChangePrivilegeLevel;(uint64_t targetStack, uint64_t targetCode, uint64_t targetStackSegment, uint64_t targetCodeSegment, uint64_t targetFlags)
 
 __process_toProcess_return_to_kernel: ; process executed return to kernel stack
     mov rsp, qword[__kernel_stack_pointer] ; load kernel stack pointer
@@ -106,6 +113,4 @@ __process_toKernel:
 
 section .bss
 __kernel_stack_pointer:
-    resb 8
-__checkCounter:
     resb 8

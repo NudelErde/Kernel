@@ -37,7 +37,7 @@ public:
         void setup();
         void start();
         void stop();
-        void sendIdentify();
+        bool sendIdentify();
         uint64_t findSlot();
         bool waitForFinish();
         bool waitForTask(uint32_t slot);

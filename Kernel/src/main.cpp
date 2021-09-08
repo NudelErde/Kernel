@@ -52,6 +52,10 @@ void configDevice(const PCICommonHeader& header, PCI* dev) {
     }
 }
 
+void foo() {
+    asm("int $0x88");
+}
+
 LinkedList<PCIDriver*> loadPCI(bool withText) {
     usb = nullptr;
     vga = nullptr;
@@ -88,7 +92,7 @@ LinkedList<PCIDriver*> loadPCI(bool withText) {
             ethernet = Ethernet::openController(d, header);
             driver = ethernet;
         } else if (header.classCode == 0x03 && header.subclass == 0x00 && header.progIF == 0x00) {
-            //vga = VGA::openController(d, header);
+            vga = VGA::openController(d, header);
             driver = vga;
         } else {
             if (header.classCode == 0x06)
@@ -113,7 +117,7 @@ void kern_start() {
     KernelOut::init();
     Print::setColor(Print::Color::WHITE, Print::Color::BLACK);
     Print::clear();
-    kout << setSerial(Serial(0x3F8)) << "System start\n";
+    //kout << setSerial(Serial(0x3F8)) << "System start\n";
     Input::init(Input::InputMode::SERIAL);
     get_multiboot_infos();
     Interrupt::init();
@@ -122,7 +126,7 @@ void kern_start() {
     Debug::init();
     PhysicalMemoryManagment::init();
 
-    setupTss((uint64_t) gdt64, 2);
+    setupTss((uint64_t) gdt64, 4);
     initKernelDynamicMemory();
     readACPITables();
 
@@ -171,7 +175,7 @@ void kern_start() {
             if (ps2 & (0b1 << i)) {
                 if (PS2::getType(i) == 0xAB83) {
                     // keyboard!
-                    //Input::init(Input::InputMode::PS2);
+                    Input::init(Input::InputMode::PS2);
                     break;
                 }
             }
@@ -186,16 +190,20 @@ void kern_start() {
             asm("hlt");
         }
     }
+    kout << "[KERNEL]: CPL: " << Hex(getCPL()) << '\n';
 
     Device* hardDisk = Device::getDevice(Device::getSystemDevice());
 
     EXT4 ext(hardDisk, 0);
 
+    kout << "Start looking for inode\n";
     uint64_t inodeID = ext.findFileINode("/start");
     if (!inodeID) {
         kout << "'/start' directory not found.\n";
         return;
     }
+    kout << "/start inode: " << Hex(inodeID) << '\n';
+
     auto inode = ext.getINode(inodeID);
     ext.iterateDirectory(
             inode, [](void* extPtr, const EXT4::DirEntry& entry) -> bool {

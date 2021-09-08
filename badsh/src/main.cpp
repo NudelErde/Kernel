@@ -130,11 +130,11 @@ int main(int argc, const char* argv) {
         memset(buffer, 0, 257);
         index = 0;
         print(currentPath);
-        write('>');
-        write(' ');
+        print("> ");
         bool reading = true;
         while (reading) {
             uint8_t ch = read();
+            write(ch);
             if (ch == '\n' || ch == '\r') {
                 write('\n');
                 reading = false;

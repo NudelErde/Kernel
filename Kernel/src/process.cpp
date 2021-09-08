@@ -8,6 +8,7 @@
 #include "debug.hpp"
 #include "elf.hpp"
 #include "interrupt.hpp"
+#include "tss.hpp"
 #include "units.hpp"
 
 namespace Kernel {
@@ -176,7 +177,7 @@ void onBasicIOCall(uint64_t b, uint64_t c, uint64_t d) {
             return;
         case 2: {
             while (Input::isEmpty()) {// todo resource and interrupt stuff
-                current->setWaiting(100);
+                current->setWaiting(1000);
                 Thread::toKernel();
             }
             *((uint8_t*) c) = Input::readBlocking();
@@ -443,6 +444,22 @@ extern "C" void onSystemCall(uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
     }
 }
 
+asm(R"(
+    .globl jmpAndChangePrivilegeLevel
+jmpAndChangePrivilegeLevel:
+    mov %rdx, %ds
+    mov %rdx, %es
+    mov %rdx, %fs
+    mov %rdx, %gs
+
+    push %rdx
+    push %rdi
+    push %r8
+    push %rcx
+    push %rsi
+    iretq
+)");
+
 static uint64_t nextPID{};
 
 Process::Process(MemoryPage* programPages, uint64_t count, MemoryManager&& heap, uint64_t sharedPagesLocation, uint64_t parentPid) : programPages(programPages), heap((MemoryManager &&) heap) {
@@ -667,6 +684,7 @@ Thread::Thread(MemoryPage stack[stackPageCount], uint64_t currentCodeAddress, ui
     Thread::currentCodeAddress = currentCodeAddress;
     Thread::pid = pid;
     Thread::tid = ++nextTid;
+    Thread::ring = 3;
     memset(Thread::locks, 0, 32);
 }
 
@@ -688,41 +706,26 @@ void Thread::reload() {
     }
 }
 
+extern "C" void __process_toProcess(uint64_t rip, uint64_t rsp, uint64_t inProcessPointer, uint64_t targetStackSegment, uint64_t targetCodeSegment);
+
 void Thread::toProcess() {
     current = this;
+
     // gcc asm shit is stupid
     if (debugOnStart) {
         debugOnStart = false;
         KTODO("process debugging");
-        Debug::setBreakpoint(3, currentCodeAddress, Debug::Condition::Execute, [](uint64_t interruptStackBase) {kout << "Stuff\n"; return false; });
     }
-    if (pid == 2) {
-        //*(uint8_t*) currentCodeAddress = 0xCC;// int3
-        if (*(uint8_t*) (currentCodeAddress + 3) == 0xe8) {
-            //uint32_t mainAddress = currentCodeAddress + 3;
-            //mainAddress += 5;
-            //mainAddress += *(uint32_t*) (currentCodeAddress + 4);
-            //kout << Hex(mainAddress);
-        }
-    }
-    asm(R"(
-    mov %0, %%rdi
-    mov %1, %%rdx
-    mov %2, %%rbx
-    call __process_toProcess
-)"
-        ://output
-        ://input
-        "g"(currentCodeAddress),
-        "g"(stackAddress),
-        "g"(&inProcess)
-        : "rax", "rbx", "rdx");
+    uint64_t targetSS = (ring == 0 ? (0) : ((3 << 3) | 3));
+    uint64_t targetCS = (ring == 0 ? (1 << 3) : ((2 << 3) | 3));
+    __process_toProcess(currentCodeAddress, stackAddress, (uint64_t) &inProcess, targetSS, targetCS);
 }
 
 void Thread::toKernel() {
     // gcc asm shit is stupid
     inProcess = false;
     Thread* tmpPointer = current;
+    current->ring = getCPL();
     current = nullptr;
     asm(R"(
     mov %0, %%rax

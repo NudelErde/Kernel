@@ -108,6 +108,9 @@ static void noDefaultInterruptHandlerFound(const Interrupt& inter) {
     if (inter.interruptNumber < namesCount) {
         kout << names[inter.interruptNumber];
     }
+    if (inter.interruptNumber == 13) {
+        asm("cli\nhlt\n");
+    }
     kout << '\n';
     if (inter.hasErrorCode) {
         kout << "Error code: " << inter.errorCode;

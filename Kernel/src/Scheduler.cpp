@@ -207,6 +207,10 @@ void Scheduler::run() {
                 continue;// continue doesn't stop the timer -> next iteration should have different relative time
             }
             //Process* procPtr = new (staticProcessBuffer) Process((Process &&) * proc);
+
+            if (proc->getPID() > 2)
+                continue;
+
             proc->reload();
             currentThread->reload();
             currentThread->toProcess();
