@@ -7,7 +7,7 @@ namespace Kernel {
 
 static GUID guidList[]{
         {"GRUB_BIOS_BOOT", "Hah!IdontNeedEFI", GUID_KEY::GRUB_BIOS_BOOT},
-        {"LINUX_NATIVE", "\xAF\x3D\xC6\x0F\x83\x84\x72\x47\x8E\x79\xE4\x7D\x47\xD8\x69\x3D", GUID_KEY::LINUX_NATIVE}};
+        {"LINUX_NATIVE", "\xAF\x3D\xC6\x0F\x83\x84\x72\x47\x8E\x79\x3D\x69\xD8\x47\x7D\xE4", GUID_KEY::LINUX_NATIVE}};
 
 GUID getGUID(uint64_t bytes[2]) {
     uint8_t* data = (uint8_t*) bytes;
