@@ -325,6 +325,10 @@ void AHCI::AHCIDevice::setup() {
     }
 }
 
+uint64_t AHCI::AHCIDevice::getSectorCount() {
+    return sectorCount;
+}
+
 bool AHCI::AHCIDevice::sendIdentify() {
     uint64_t slotID = findSlot();
     if (slotID >= 32)
@@ -633,7 +637,6 @@ void AHCI::tryDevice(uint8_t device) {
     uint32_t* DBAR = (uint32_t*) (ABAR.virtualAddress + 0x100 + (0x80 * device));
     AHCIDevice* dev = new AHCIDevice(DBAR, this);
     devices[device] = dev;
-    kout << Hex(device) << '\n';
     dev->setup();
 }
 

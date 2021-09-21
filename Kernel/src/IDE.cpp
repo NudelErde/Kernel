@@ -157,6 +157,10 @@ void Channel::readBuffer(uint8_t* buffer, uint64_t size) {
     }
 }
 
+uint64_t ATADevice::getSectorCount() {
+    return sectorCount;
+}
+
 void ATADevice::read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* dest) {
     if (sectorCount == 0)
         return;

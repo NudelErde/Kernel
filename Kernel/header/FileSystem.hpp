@@ -356,7 +356,7 @@ public:
     };
 
     EXT4() = default;
-    EXT4(Device* device, uint8_t partition);
+    EXT4(Device* device, uint16_t partition);
     ~EXT4();
     EXT4(const EXT4&) = delete;
     EXT4& operator=(const EXT4&) = delete;
@@ -401,12 +401,16 @@ public:
 
     bool writeINode(const INode& node, uint64_t inodeNum);
 
+    bool checkSuperblock();
+
+    bool inline isInvalid() { return invalid; }
+
 private:
     bool travelExtentTree(const uint8_t* extentPtr, uint64_t sector, void (*callback)(void*, uint64_t), void* self);
 
     SuperBlock sb;
     Device* device;
-    uint8_t partitionID;
+    uint16_t partitionID;
     Partition partition;
     SuperBlock* superBlock;
     uint64_t sectorsPerBlock;
@@ -415,6 +419,7 @@ private:
     uint64_t blockBitmapSize;
     uint64_t lastBlockBitmapIndex;
     uint8_t* lastBlockBitmap;
+    bool invalid;
 
     static constexpr uint32_t supportedIncompatFeatures = 0x200 | 0x2 | 0x400;
     static constexpr uint32_t supportedReadOnlycompatFeatures = 0x400 | 0x40 | 0x20 | 0x8 | 0x2 | 0x1;

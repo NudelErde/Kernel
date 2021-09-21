@@ -18,18 +18,18 @@ syscall is interrupt `0x80` and has 4 64 bit arguments in registers `RAX` to `RD
    * `RBX == 0x11` = call inter process method, `RCX` = InterProcessMethodCallTargetDescriptor struct
    * `RBX == 0x12` = register inter process method, `RCX` = InterProcessMethodRegistration struct
    * `RBX == 0x13` = not implemented: remove inter process method, `RCX` = method id
- * `RAX == 2` = device syscall
-   * `RBX == 1` = Get device count, `RCX` = pointer to 64 bit result buffer
-   * `RBX == 2` = Get System device, `RCX` = pointer to 64 bit result buffer
+ * `RAX == 2` = filesystem syscall
+   * `RBX == 1` = Get filesystem count, `RCX` = pointer to 64 bit result buffer
+   * `RBX == 2` = Get System filesystem, `RCX` = pointer to 64 bit result buffer
  * `RAX == 3` = basic IO syscall
    * `RBX == 1` = write data, `RCX` = one data byte
    * `RBX == 2` = read data, `RCX` = pointer to 8 bit result buffer
  * `RAX == 4` = ext4 syscall
-   * `RBX == 1` = get inode of path, `RCX` = device, `RDX` = pointer to inodeOfPathRequest struct
-   * `RBX == 2` = get sector of inode, `RCX` = device, `RDX` = pointer to sectorOfInodeRequest struct
-   * `RBX == 3` = get flags of inode, `RCX` = device, `RDX` = pointer to flagsOfInodeRequest struct
-   * `RBX == 4` = get directory entry, `RCX` = device, `RDX` = pointer to directoryEntriesRequest struct
-   * `RBX == 5` = get size of file, `RCX` = device, `RDX` = pointer to fileSizeRequest struct
+   * `RBX == 1` = get inode of path, `RCX` = filesystem, `RDX` = pointer to inodeOfPathRequest struct
+   * `RBX == 2` = get sector of inode, `RCX` = filesystem, `RDX` = pointer to sectorOfInodeRequest struct
+   * `RBX == 3` = get flags of inode, `RCX` = filesystem, `RDX` = pointer to flagsOfInodeRequest struct
+   * `RBX == 4` = get directory entry, `RCX` = filesystem, `RDX` = pointer to directoryEntriesRequest struct
+   * `RBX == 5` = get size of file, `RCX` = filesystem, `RDX` = pointer to fileSizeRequest struct
  * `RAX == 5` = pci device control
    * `RBX == 0x01` = get native pci control, `RCX` = bus device function, `RDX` = pointer to buffer //not implemented
    * `RBX == 0x02` = get pci device list, `RCX` = buffer element count, `RDX` = pointer to buffer

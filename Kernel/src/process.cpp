@@ -30,7 +30,7 @@ void onProcessSystemCall(uint64_t b, uint64_t c, uint64_t d) {
             return;
         case 0x03: {
             struct SpawnRequest {
-                uint64_t deviceID;
+                uint64_t fileSystemID;
                 const char* path;
                 const char* argumentsArray;
                 uint64_t pid;
@@ -38,8 +38,10 @@ void onProcessSystemCall(uint64_t b, uint64_t c, uint64_t d) {
             };
             SpawnRequest* req = (SpawnRequest*) c;
             const char* processPath = req->path;
-            Device* device = Device::getDevice(req->deviceID);
-            EXT4 ext(device, 0);
+            uint64_t deviceId = getDeviceForFileSystem(req->fileSystemID);
+            uint64_t partitionId = getPartitionForFileSystem(req->fileSystemID);
+            Device* device = Device::getDevice(deviceId);
+            EXT4 ext(device, partitionId);
             uint64_t thisTid = current->getTID();
             uint64_t pid = loadAndExecute(ext, processPath, req->argumentsArray, lastProcess->getPID(), req->loadWithDebug);
             req->pid = pid;
@@ -159,10 +161,10 @@ void onProcessSystemCall(uint64_t b, uint64_t c, uint64_t d) {
 void onMassStorageSystemCall(uint64_t b, uint64_t c, uint64_t d) {
     switch (b) {
         case 1:
-            *((uint64_t*) c) = Device::getDeviceCount();
+            *((uint64_t*) c) = getFileSystemCount();
             return;
         case 2:
-            *((uint64_t*) c) = Device::getSystemDevice();
+            *((uint64_t*) c) = getSystemFileSystem();
             return;
         default:
             return;
@@ -189,8 +191,10 @@ void onBasicIOCall(uint64_t b, uint64_t c, uint64_t d) {
 }
 
 void onEXT4Syscall(uint64_t b, uint64_t c, uint64_t d) {
-    Device* device = Device::getDevice(c);
-    EXT4 ext(device, 0);
+    uint64_t deviceId = getDeviceForFileSystem(c);
+    uint64_t partitionId = getPartitionForFileSystem(c);
+    Device* device = Device::getDevice(deviceId);
+    EXT4 ext(device, partitionId);
     switch (b) {
         case 1: {
             struct InodeOfPathRequest {

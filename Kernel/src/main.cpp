@@ -4,6 +4,7 @@
 #include "BasicIn.hpp"
 #include "Ethernet.hpp"
 #include "FileSystem.hpp"
+#include "GPT.hpp"
 #include "IDE.hpp"
 #include "KernelOut.hpp"
 #include "MassStorage.hpp"
@@ -192,9 +193,19 @@ void kern_start() {
     }
     kout << "[KERNEL]: CPL: " << Hex(getCPL()) << '\n';
 
-    Device* hardDisk = Device::getDevice(Device::getSystemDevice());
+    scanDevicePartitions();
 
-    EXT4 ext(hardDisk, 0);
+    uint64_t systemFS = getSystemFileSystem();
+    uint64_t deviceId = getDeviceForFileSystem(systemFS);
+    uint64_t partitionId = getPartitionForFileSystem(systemFS);
+
+    kout << "Start from device " << Hex(deviceId) << " partition " << Hex(partitionId) << '\n';
+
+    EXT4 ext(Device::getDevice(deviceId), partitionId);
+    if (ext.isInvalid()) {
+        kout << "Invalid ext filesystem found";
+        asm("cli\nhlt\n");
+    }
 
     kout << "Start looking for inode\n";
     uint64_t inodeID = ext.findFileINode("/start");

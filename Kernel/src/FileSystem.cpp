@@ -12,7 +12,7 @@
 
 namespace Kernel {
 
-EXT4::EXT4(Device* device, uint8_t partitionID) : device(device), partitionID(partitionID) {
+EXT4::EXT4(Device* device, uint16_t partitionID) : device(device), partitionID(partitionID) {
     partition = getPartition(*device, partitionID);
     superBlock = new SuperBlock();
     device->read(partition.LBAStart + 2, 2, (uint8_t*) superBlock);
@@ -27,9 +27,23 @@ EXT4::EXT4(Device* device, uint8_t partitionID) : device(device), partitionID(pa
 
     lastBlockBitmapIndex = 0;
     lastBlockBitmap = nullptr;
+
+    if (!checkSuperblock()) {
+        invalid = true;
+        kout << "Invalid superblock with checksum 0x";
+        kout << Hex(superBlock->s_checksum);
+        kout << "\n";
+        return;
+    }
+    invalid = false;
+}
+
+bool EXT4::checkSuperblock() {
+    return superBlock->s_checksum == getSuperblockChecksum();
 }
 
 uint32_t EXT4::generateINodeChecksum(INode node, uint64_t inodeNum) {
+    if (invalid) return 0;
     uint8_t* buffer = (uint8_t*) &node;
     constexpr auto EXT4_GOOD_OLD_INODE_SIZE = 128;
     uint32_t csum = 0;
@@ -72,6 +86,7 @@ uint32_t EXT4::getSuperblockChecksum() {
 }
 
 uint16_t EXT4::getGroupDescChecksum(uint32_t groupNum) {
+    if (invalid) return 0;
     GroupDesc desc = getGroupDesc(groupNum);
     uint16_t checkSum = desc.bg_checksum;
     uint32_t res = crc32c(0, (uint8_t*) superBlock->s_uuid, sizeof(superBlock->s_uuid));
@@ -84,6 +99,7 @@ uint16_t EXT4::getGroupDescChecksum(uint32_t groupNum) {
 }
 
 bool EXT4::travelExtentTree(const uint8_t* extentPtr, uint64_t sector, void (*callback)(void*, uint64_t), void* self) {
+    if (invalid) return false;
     uint64_t block = sector / sectorsPerBlock;
     ExtentHeader* header = (ExtentHeader*) extentPtr;
     if (header->eh_magic == 0xF30A) {
@@ -128,6 +144,7 @@ bool EXT4::travelExtentTree(const uint8_t* extentPtr, uint64_t sector, void (*ca
 }
 
 bool EXT4::getSectorInFile(const INode& inode, uint8_t* buffer, uint64_t sector) {
+    if (invalid) return false;
     struct Info {
         uint8_t* buffer;
         Device* device;
@@ -140,6 +157,7 @@ bool EXT4::getSectorInFile(const INode& inode, uint8_t* buffer, uint64_t sector)
 }
 
 bool EXT4::setSectorInFile(const INode& inode, uint8_t* buffer, uint64_t sector) {
+    if (invalid) return false;
     struct Info {
         uint8_t* buffer;
         Device* device;
@@ -153,6 +171,7 @@ bool EXT4::setSectorInFile(const INode& inode, uint8_t* buffer, uint64_t sector)
 }
 
 bool EXT4::setSizeOfFile(uint64_t inodeNum, uint64_t size) {
+    if (invalid) return false;
     if (inodeNum <= 0) {
         return false;
     }
@@ -166,10 +185,12 @@ bool EXT4::setSizeOfFile(uint64_t inodeNum, uint64_t size) {
 }
 
 uint64_t EXT4::getFileSize(const INode& inode) {
+    if (invalid) return 0;
     return inode.i_size_lo | (((uint64_t) inode.i_size_high) << 32);
 }
 
 bool EXT4::writeGroupDesc(uint64_t groupNum, const GroupDesc& desc) {
+    if (invalid) return false;
     uint64_t offset = groupNum * superBlock->s_desc_size;
     uint64_t subOffset = offset % 512;
     uint8_t sector[512];
@@ -187,6 +208,7 @@ bool EXT4::writeGroupDesc(uint64_t groupNum, const GroupDesc& desc) {
 }
 
 uint64_t EXT4::findFreeINode() {
+    if (invalid) return 0;
     uint32_t freeINode = superBlock->s_first_ino;
 
     for (; !isINodeUsed(freeINode); ++freeINode)
@@ -204,6 +226,7 @@ uint64_t EXT4::findFreeINode() {
 }
 
 bool EXT4::useBlocks(uint64_t first, uint64_t count, bool value) {
+    if (invalid) return false;
     uint64_t offset = first % superBlock->s_blocks_per_group;
     uint64_t group = first / superBlock->s_blocks_per_group;
     uint64_t bitmapBufferSize = ((blockBitmapSize - 1) / 512 + 1) * 512;
@@ -254,6 +277,7 @@ bool EXT4::useBlocks(uint64_t first, uint64_t count, bool value) {
     return true;
 }
 bool EXT4::writeINode(const INode& node, uint64_t inodeNum) {
+    if (invalid) return false;
     if (inodeNum <= 0) {
         return false;
     }
@@ -280,6 +304,7 @@ bool EXT4::writeINode(const INode& node, uint64_t inodeNum) {
     return true;
 }
 bool EXT4::increaseFileSize(uint64_t inodeNum, uint64_t size) {
+    if (invalid) return false;
     if (size == 0)
         return false;
 
@@ -355,11 +380,14 @@ bool EXT4::increaseFileSize(uint64_t inodeNum, uint64_t size) {
     return true;
 }
 bool EXT4::decreaseFileSize(uint64_t inodeNum, uint64_t size) {
-
+    if (invalid) return false;
+    kout << "TODO " << __FILE__ << ':' << (uint64_t) __LINE__ << '\n';
+    asm("hlt");
     return false;
 }
 
 void EXT4::iterateDirectory(const INode& inode, void (*callback)(const DirEntry&)) {
+    if (invalid) return;
     if (!(inode.i_mode & 0x4000))
         return;
 
@@ -385,6 +413,7 @@ void EXT4::iterateDirectory(const INode& inode, void (*callback)(const DirEntry&
 }
 
 void EXT4::iterateDirectory(const INode& inode, bool (*callback)(void*, const DirEntry&), void* self) {
+    if (invalid) return;
     if (!(inode.i_mode & 0x4000))
         return;
 
@@ -417,6 +446,7 @@ EXT4::~EXT4() {
 }
 
 bool EXT4::isINodeUsed(uint64_t inodeNum) {
+    if (invalid) return false;
     uint64_t group = inodeNum / superBlock->s_inodes_per_group;
     uint64_t index = inodeNum % superBlock->s_inodes_per_group;
     uint64_t byteIndex = index / 8;
@@ -433,6 +463,7 @@ bool EXT4::isINodeUsed(uint64_t inodeNum) {
 }
 
 uint64_t EXT4::findFileINode(const char* name) {
+    if (invalid) return 0;
     uint64_t inodeNum = 2;
     INode node;
     node = getINode(inodeNum);
@@ -488,6 +519,7 @@ uint64_t EXT4::findFileINode(const char* name) {
 }
 
 EXT4::FileType EXT4::getFileType(const INode& inode) {
+    if (invalid) return FileType::UNKNOWN;
     if (inode.i_mode & 0x1000)
         return FileType::FIFO;
     else if (inode.i_mode & 0x2000)
@@ -506,6 +538,7 @@ EXT4::FileType EXT4::getFileType(const INode& inode) {
 }
 
 bool EXT4::isBlockUsed(uint64_t blockNum) {
+    if (invalid) return false;
     uint64_t group = blockNum / superBlock->s_blocks_per_group;
     uint64_t index = blockNum % superBlock->s_blocks_per_group;
     uint64_t byteIndex = index / 8;
@@ -530,6 +563,7 @@ bool EXT4::isBlockUsed(uint64_t blockNum) {
 
 
 EXT4::INode EXT4::getINode(uint64_t inodeNum) {
+    if (invalid) return {};
     if (inodeNum <= 0) {
         return {};
     }
@@ -553,6 +587,7 @@ EXT4::INode EXT4::getINode(uint64_t inodeNum) {
 }
 
 EXT4::GroupDesc EXT4::getGroupDesc(uint64_t groupNum) {
+    if (invalid) return {};
     GroupDesc desc{};
     uint64_t offset = groupNum * superBlock->s_desc_size;
     uint64_t subOffset = offset % 512;

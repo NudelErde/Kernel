@@ -1,7 +1,7 @@
 #include "Partition.hpp"
-#include "endian.hpp"
-
+#include "GPT.hpp"
 #include "KernelOut.hpp"
+#include "endian.hpp"
 
 namespace Kernel {
 static void LBA2CHS(uint64_t LBA, uint8_t* result) {
@@ -26,7 +26,17 @@ void createMBR(Device& device) {
     device.write(0, 1, (uint8_t*) MasterBootRecordSector);
     device.flush();
 }
-void setPartition(Device& device, uint8_t partitionID, uint64_t start, uint64_t end, uint8_t type, bool bootable) {
+uint64_t getPartitionCount(Device& device) {
+    if (checkIfGPT(device)) {
+        return getGPTPartitionCount(device);
+    }
+    return 4;
+}
+void setPartition(Device& device, uint16_t partitionID, uint64_t start, uint64_t end, uint64_t type[2], bool bootable) {
+    if (checkIfGPT(device)) {
+        setGPTPartition(device, partitionID, start, end, type);
+        return;
+    }
     uint8_t MasterBootRecordSector[512]{};
     device.read(0, 1, (uint8_t*) MasterBootRecordSector);
     if (!(MasterBootRecordSector[510] == 0x55 && MasterBootRecordSector[511] == 0xAA)) {
@@ -44,7 +54,7 @@ void setPartition(Device& device, uint8_t partitionID, uint64_t start, uint64_t 
         LBA2CHS(start, (MasterBootRecordSector + 1));
     }
 
-    MasterBootRecordSector[index + 4] = type;
+    MasterBootRecordSector[index + 4] = (uint8_t) type[0];
 
     if (end >= 8455716864llu) {//max size for CHS
         MasterBootRecordSector[index + 5] = 0xFF;
@@ -70,8 +80,12 @@ void setPartition(Device& device, uint8_t partitionID, uint64_t start, uint64_t 
     device.flush();
 }
 
-Partition getPartition(Device& device, uint8_t partitionID) {
+Partition getPartition(Device& device, uint16_t partitionID) {
+    if (checkIfGPT(device)) {
+        return getGPTPartition(device, partitionID);
+    }
     Partition part;
+    part.index = partitionID;
     uint8_t MasterBootRecordSector[512]{};
     device.read(0, 1, MasterBootRecordSector);
     if (!(MasterBootRecordSector[510] == 0x55 && MasterBootRecordSector[511] == 0xAA)) {
@@ -83,6 +97,65 @@ Partition getPartition(Device& device, uint8_t partitionID) {
     part.type = MasterBootRecordSector[index + 4];
     part.LBAStart = fromLittleEndian(*(uint32_t*) (MasterBootRecordSector + index + 0x8));
     part.sectorCount = fromLittleEndian(*(uint32_t*) (MasterBootRecordSector + index + 0xC));
+    part.gpt = false;
     return part;
 }
+
+struct FileSystemId {
+    uint64_t deviceId;
+    uint64_t partitionId;
+};
+static FileSystemId fileSystemList[128];
+static uint64_t systemFileSystem;
+static uint64_t fileSystemCount;
+
+void scanDevicePartitions() {
+    fileSystemCount = 0;
+    systemFileSystem = 0;
+    uint64_t deviceCount = Device::getDeviceCount();
+    for (uint64_t deviceIndex = 0; deviceIndex < deviceCount; ++deviceIndex) {
+        Device* device = Device::getDevice(deviceIndex);
+        if (device->getSectorCount() > 0) {
+            uint64_t partitionCount = getPartitionCount(*device);
+            for (uint64_t partitionIndex = 0; partitionIndex < partitionCount; ++partitionIndex) {
+                Partition p = getPartition(*device, partitionIndex);
+                if (!p.gpt && p.type == 0) {
+                    continue;
+                }
+                if (p.gpt && getGUID(p.gptType).key == GUID_KEY::UNKNOWN) {
+                    if ((p.gptType[0] != 0 || p.gptType[1] != 0)) {
+                        kout << Hex(deviceIndex) << ':' << Hex(partitionIndex) << " UNKNOWN ";
+                        for (uint8_t i = 0; i < 16; ++i) {
+                            kout << Hex(((uint8_t*) p.gptType)[i], 2);
+                        }
+                        kout << '\n';
+                    }
+                    continue;
+                }
+                fileSystemList[fileSystemCount].deviceId = deviceIndex;
+                fileSystemList[fileSystemCount].partitionId = partitionIndex;
+                if (p.gpt) {
+                    kout << Hex(deviceIndex) << ':' << Hex(partitionIndex) << ' ' << getGUID(p.gptType).name << '\n';
+                }
+                if ((!p.gpt && p.type == 83) || (p.gpt && getGUID(p.gptType).key == GUID_KEY::LINUX_NATIVE)) {
+                    systemFileSystem = fileSystemCount;
+                }
+                fileSystemCount++;
+            }
+        }
+    }
+}
+uint64_t getSystemFileSystem() {
+    return systemFileSystem;
+}
+uint64_t getFileSystemCount() {
+    return fileSystemCount;
+}
+uint64_t getDeviceForFileSystem(uint64_t id) {
+    return fileSystemList[id].deviceId;
+}
+uint64_t getPartitionForFileSystem(uint64_t id) {
+    return fileSystemList[id].partitionId;
+}
+
 }// namespace Kernel

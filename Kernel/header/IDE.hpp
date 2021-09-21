@@ -115,6 +115,7 @@ public:
     void read(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* dest) override;
     void write(uint64_t sectorIndex, uint64_t sectorCount, uint8_t* src) override;
     void flush() override;
+    uint64_t getSectorCount() override;
 };
 
 void openController(uint8_t bus, uint8_t device, uint8_t func, const PCICommonHeader& header);
